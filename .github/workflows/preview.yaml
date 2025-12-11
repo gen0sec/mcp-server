@@ -43,7 +43,7 @@ jobs:
           mv "${{ steps.meta.outputs.bake-file }}" "${{ runner.temp }}/gen0sec-mcp-server-bake-meta.json"
 
       - name: Upload meta bake definition
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gen0sec-mcp-server-bake-meta
           path: ${{ runner.temp }}/gen0sec-mcp-server-bake-meta.json
