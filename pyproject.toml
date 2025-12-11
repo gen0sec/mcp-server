@@ -1,0 +1,11 @@
+[project]
+name = "gen0sec-waf-rule-mcp"
+version = "0.1.0"
+description = "Gen0Sec WAF Rule Generation MCP Server"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[cli]>=1.22.0",
+    "pyyaml>=6.0.3",
+    "requests>=2.32.5",
+]

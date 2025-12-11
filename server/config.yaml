@@ -1,0 +1,26 @@
+waf_validation_api_url: https://public.gen0sec.com/v1/waf/validate
+waf_context_urls:
+  - name: actions
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/actions/index.md
+
+  - name: fields
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/fields/index.md
+
+  - name: functions
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/functions/index.md
+
+  - name: expressions
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/expressions/index.md
+
+  - name: operators
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/operators/index.md
+
+  - name: values
+    url: https://developers.cloudflare.com/ruleset-engine/rules-language/values/index.md
+
+exploit_repositories:
+  - https://github.com/projectdiscovery/nuclei-templates.git
+context_folder: context
+repo_folder: repo
+prompts_folder: prompts
+resource_update_interval: 24

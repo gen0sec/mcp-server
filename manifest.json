@@ -1,0 +1,45 @@
+{
+  "manifest_version": "0.2",
+  "name": "Gen0Sec WAF Rule Generation MCP Server",
+  "version": "1.0.0",
+  "description": "Generate WAF rules and provide context information about WAF rules.",
+  "author": {
+    "name": "Gen0Sec",
+    "email": "hello@gen0sec.com"
+  },
+  "icon": "",
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "${user_config.uv_path}",
+      "args": [
+        "run",
+        "--project",
+        "${__dirname}",
+        "${__dirname}/server/main.py"
+      ],
+      "env": {
+        "WAF_VALIDATION_API_URL": "${user_config.validation_api_url}"
+      }
+    }
+  },
+  "user_config": {
+    "uv_path": {
+      "type": "file",
+      "default": "uv",
+      "title": "Path to uv executable",
+      "description": "Path to the 'uv' executable used to run the server.",
+      "required": false
+    },
+    "validation_api_url": {
+      "type": "string",
+      "default": "https://public.gen0sec.com/v1/waf/validate",
+      "title": "WAF validation API URL",
+      "description": "Full path to the WAF validation API URL.",
+      "required": true
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": true
+}
