@@ -22,7 +22,7 @@ jobs:
       matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Create matrix
         id: platforms
@@ -162,7 +162,7 @@ jobs:
 
     steps:
     - name: Checkout sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
 
     - uses: actions/setup-node@v6
