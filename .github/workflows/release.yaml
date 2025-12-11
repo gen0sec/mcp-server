@@ -173,6 +173,11 @@ jobs:
       run: |
          npm install -g @anthropic-ai/mcpb
          mcpb pack
+         # Find and rename the generated .mcpb file to the expected name
+         MCPB_FILE=$$(find . -name "*.mcpb" -type f | head -1)
+         if [ -n "$$MCPB_FILE" ] && [ "$$MCPB_FILE" != "gen0sec-mcp-server.mcpb" ]; then
+           mv "$$MCPB_FILE" gen0sec-mcp-server.mcpb
+         fi
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v5
