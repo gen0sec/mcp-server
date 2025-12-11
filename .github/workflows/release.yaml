@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  GEN0SEC_MCP_SERVER_REGISTRY_IMAGE: ghcr.io/gen0sec/gen0sec-mcp-server
+  GEN0SEC_MCP_SERVER_REGISTRY_IMAGE: ghcr.io/gen0sec/mcp-server/gen0sec-mcp-server
 
 jobs:
   docker-prepare:
