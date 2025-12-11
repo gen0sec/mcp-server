@@ -192,7 +192,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v6
         with:
-          pattern: gen0sec-mcp-server.mcpb
+          name: gen0sec-mcp-server
 
       - name: ls
         shell: bash
