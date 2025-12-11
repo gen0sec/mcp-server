@@ -1,6 +1,6 @@
 [project]
 name = "gen0sec-waf-rule-mcp"
-version = "0.1.0"
+version = "0.0.1"
 description = "Gen0Sec WAF Rule Generation MCP Server"
 readme = "README.md"
 requires-python = ">=3.12"
