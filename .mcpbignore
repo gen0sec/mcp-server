@@ -1,0 +1,12 @@
+.venv/*
+dist/*
+.git/*
+.github/*
+server/waf_rule_mpc/__pycache__/
+server/repo/
+tests/__pycache__/*
+*.log
+*.mcpb
+Dockerfile
+docker-bake.hcl
+Makefile

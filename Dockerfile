@@ -5,12 +5,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install required system packages
 RUN apt-get update && apt-get install -y \
-    git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd app --home /app \
+    && mkdir -p /app \
+    && chown -R app:app /app
+
 
 # Set working directory
 WORKDIR /app
+
+USER app
 
 # Copy project files
 COPY server /app
@@ -25,4 +30,6 @@ EXPOSE 8000
 
 # Run the Python server
 # Host 0.0.0.0 allows connections from outside the container
+
+
 CMD ["python", "main.py", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000"]
