@@ -19,16 +19,37 @@ logger = logging.getLogger(__name__)
 # Initialize configuration
 config_path = Path(__file__).parent / "config.yaml"
 config = Config().from_yaml(config_path)
+logger.info(f"WAF Validation API URL: {config.WAF_VALIDATION_API_URL}")
 
 # Initialize resource managers
-cve_source_manager = CVESourceManager(config.EXPLOIT_REPOSITORIES, config.REPO_FOLDER)
+cve_source_manager = CVESourceManager(
+    config.EXPLOIT_REPOSITORIES,
+    config.REPO_FOLDER,
+    config.NUCLEI_TEMPLATES_VERSION,
+    config.NUCLEI_TEMPLATES_AUTO_UPDATE
+)
 waf_context_manager = WirefilterWAFContextManager(config.WAF_CONTEXT_URLS, config.CONTEXT_FOLDER)
 prompt_manager = PromptManager(config.PROMPTS_FOLDER)
 
 # Initialize and start resource updator
 resource_updater = ResourceUpdater(waf_context_manager, cve_source_manager, config.RESOURCE_UPDATE_INTERVAL)
 
+# Always download nuclei templates at startup (if version is configured or auto-update is enabled)
+# This ensures templates are available even if resource updater isn't running
+if config.NUCLEI_TEMPLATES_VERSION or config.NUCLEI_TEMPLATES_AUTO_UPDATE:
+    if config.NUCLEI_TEMPLATES_AUTO_UPDATE:
+        logger.info("Auto-update enabled: downloading latest nuclei-templates at startup...")
+    else:
+        logger.info(f"Downloading nuclei-templates version {config.NUCLEI_TEMPLATES_VERSION} at startup...")
+    try:
+        cve_source_manager.clone_cve_repositories()
+    except Exception as e:
+        logger.error(f"Failed to download nuclei-templates at startup: {e}")
+
+# Start resource updater for periodic updates
+# Note: Context files are now local, but we still need periodic updates for nuclei templates
 resource_updater.start()
+logger.info("Resource updater started for periodic nuclei-templates updates.")
 
 # Setup signal handlers for clean shutdown
 def signal_handler(signum, frame):
@@ -99,28 +120,46 @@ def fetch_cve_vulnerability_template(cve_id: str) -> dict:
 @mcp.tool(
     name="validate_waf_expression",
     title="Validate WAF expression",
-    description="Validate a Wirefilter WAF (Web Application Firewall) expression. Returns a dictionary with valid (boolean) indicating if the expression is syntactically valid, and error_message (string) containing a human-readable validation error message if invalid."
+    description="Validate a Wirefilter WAF (Web Application Firewall) expression. Optionally test against custom test data. Returns a dictionary with valid (boolean) indicating if the expression is syntactically valid, and error_message (string) containing a human-readable validation error message if invalid."
 )
-def validate_waf_expression(expression: str) -> dict:
+def validate_waf_expression(expression: str, test: dict = None) -> dict:
     """
     Validate a Wirefilter WAF (Web Application Firewall) expression.
 
     Input:
     expression (string) — A Wirefilter WAF expression to validate.
+    test (object, optional) — Optional custom test data to use for matching. If provided, the expression will also be tested against this data.
 
-    Expected Input Example:
+    Expected Input Example (without test):
     {
         "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.uri.path contains \"/admin\")"
+    }
+
+    Expected Input Example (with test):
+    {
+        "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.uri.path contains \"/admin\")",
+        "test": {
+            "http.request.method": "GET",
+            "http.request.path": "/admin/dashboard",
+            "ip.src": "10.0.0.1"
+        }
     }
 
     Output:
     A dictionary with the following fields:
         valid (boolean) — true if the expression is syntactically valid; false otherwise.
         error_message (string) — A human-readable validation error message. Empty when valid is true.
+        matched (boolean, optional) — Present if test data was provided. Indicates if the expression matched the test data.
+        test_error (string, optional) — Present if test data was provided and test failed. Contains error message.
 
-    Example Output (valid expression):
+    Example Output (valid expression without test):
+    {
+        "valid": true
+    }
+    Example Output (valid expression with test):
     {
         "valid": true,
+        "matched": true
     }
     Example Output (invalid expression):
     {
@@ -128,7 +167,7 @@ def validate_waf_expression(expression: str) -> dict:
         "error_message": "Unexpected token 'andd' at position 23."
     }
     """
-    result = waf_validator.validate_waf_expression(expression)
+    result = waf_validator.validate_waf_expression(expression, test)
     return result
 
 @mcp.tool(
@@ -136,13 +175,13 @@ def validate_waf_expression(expression: str) -> dict:
     title="Validate WAF expression with tests",
     description="Validate a Wirefilter WAF rule expression, optionally against a full HTTP request example. Returns a dictionary with valid (boolean), error_message (string), matched (boolean) indicating if the test request matches the rule, and test_error (string) if the test fails."
 )
-def validate_waf_expression_with_tests(rule: str, test: dict) -> dict:
+def validate_waf_expression_with_tests(rule: str, test: dict = None) -> dict:
     """
     Validate a Wirefilter WAF rule expression, optionally against a full HTTP request example.
 
     Input:
     rule (string) — The WAF rule expression to validate.
-    test (object, optional) — An optional full HTTP request object used for testing the rule. Includes the following fields:
+    test (object, optional) — An optional custom test data object used for testing the rule. If not provided, uses default mock data. Includes the following fields:
         http.request.method (string)
         http.request.scheme (string)
         http.request.host (string)
@@ -275,10 +314,32 @@ if __name__ == "__main__":
         default=None,
         help="Port to bind to (default: 8000 for HTTP transports, not used for stdio)"
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--workspace",
+        type=str,
+        default=None,
+        help="Workspace directory (optional, for compatibility)"
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["debug", "info", "warning", "error", "critical"],
+        default="info",
+        help="Set the logging level (default: info)"
+    )
+    # Use parse_known_args to ignore unknown args that MCP client might pass
+    args, unknown = parser.parse_known_args()
+
+    # Set logging level based on argument
+    if unknown:
+        logger.debug(f"Ignoring unknown arguments: {unknown}")
+    log_level = getattr(logging, args.log_level.upper())
+    logging.getLogger().setLevel(log_level)
+    logger.setLevel(log_level)
 
     try:
         if args.transport == "stdio":
+            logger.info("Starting MCP server with stdio transport...")
             mcp.run(transport=args.transport)
         else:
             # For HTTP transports, FastMCP uses uvicorn internally
@@ -327,6 +388,7 @@ if __name__ == "__main__":
             uvicorn.Server.__init__ = _patched_uvicorn_server_init
 
             try:
+                logger.info("Starting MCP server with HTTP transport...")
                 mcp.run(transport=args.transport)
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal, shutting down...")

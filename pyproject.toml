@@ -1,11 +1,28 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "gen0sec-waf-rule-mcp"
 version = "0.0.1"
 description = "Gen0Sec WAF Rule Generation MCP Server"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "mcp[cli]>=1.22.0",
-    "pyyaml>=6.0.3",
-    "requests>=2.32.5",
+authors = [
+    {name = "Gen0Sec", email = "hello@gen0sec.com"}
 ]
+license = {text = "MIT"}
+classifiers = [
+    "Private :: Do Not Upload"  # Prevents accidental uploads to PyPI
+]
+dependencies = [
+    "mcp>=1.22.0",
+    "pyyaml>=6.0.3",
+    "requests>=2.32.5"
+]
+
+[tool.setuptools]
+packages = ["server"]
+
+[project.scripts]
+bundle-deps = "python:install_deps"

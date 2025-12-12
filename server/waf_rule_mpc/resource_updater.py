@@ -20,7 +20,8 @@ class ResourceUpdater:
         """
         while self._running:
             try:
-                self.waf_context_manager.download_waf_contexts()
+                # Only update CVE repositories (nuclei templates)
+                # Context files are now local and don't need to be downloaded
                 self.cve_source_manager.clone_cve_repositories()
             except Exception as e:
                 logger.error(f"Error fetching resources: {e}")
