@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "Gen0Sec WAF Rule Generation MCP Server",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Generate WAF rules and provide context information about WAF rules.",
   "author": {
     "name": "Gen0Sec",
