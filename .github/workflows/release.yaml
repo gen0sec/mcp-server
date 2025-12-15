@@ -72,7 +72,7 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
 
       - name: Download meta bake definition
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: gen0sec-mcp-server-bake-meta
           path: ${{ runner.temp }}
@@ -123,13 +123,13 @@ jobs:
       - docker-build
     steps:
       - name: Download meta bake definition
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: gen0sec-mcp-server-bake-meta
           path: ${{ runner.temp }}
 
       - name: Download digests
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: ${{ runner.temp }}/digests
           pattern: gen0sec-mcp-server-digests-*
@@ -190,7 +190,7 @@ jobs:
 
       steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: gen0sec-mcp-server
 
