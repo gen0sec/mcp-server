@@ -10,23 +10,42 @@
 waf_validation_api_url: https://public.gen0sec.com/v1/waf/validate
 
 
-# Nuclei templates configuration
-# Uses ZIP artifact download by default (not git repository)
-# This will download: https://github.com/projectdiscovery/nuclei-templates/archive/refs/tags/{version}.zip
+# =============================================================================
+# CVE Source Plugins Configuration
+# =============================================================================
+# The server supports multiple CVE data sources via plugins.
+# Plugins are queried in priority order (lower number = checked first).
+# The first plugin to return data wins.
+
+# -----------------------------------------------------------------------------
+# Nuclei Open Source Plugin (GitHub)
+# -----------------------------------------------------------------------------
+# Uses the free nuclei-templates repository from GitHub.
+# Downloads and searches YAML template files locally.
+nuclei_opensource_enabled: true
+nuclei_opensource_priority: 100  # Lower priority (checked second if paid is enabled)
+
+# Nuclei templates version to download (e.g., "v10.3.5")
 # Set to null or empty string to disable nuclei-templates download
 nuclei_templates_version: v10.3.5
 
 # Auto-update nuclei templates to latest release
 # If enabled, ignores nuclei_templates_version and always downloads the latest release from GitHub
-# If disabled, uses the fixed version specified in nuclei_templates_version
 nuclei_templates_auto_update: true
 
-# Exploit repositories
-# Note: nuclei-templates is handled automatically via nuclei_templates_version above
-# Do NOT add nuclei-templates git URL here - it will be ignored in favor of version-based ZIP download
-# Add other CVE repositories here if needed (git URLs or ZIP URLs)
-exploit_repositories: []
+# -----------------------------------------------------------------------------
+# ProjectDiscovery API Plugin
+# -----------------------------------------------------------------------------
+# Uses the ProjectDiscovery API for premium vulnerability data.
+# Provides more detailed exploit information and faster updates.
+# Get your API key at: https://cloud.projectdiscovery.io/
+projectdiscovery_enabled: true
+projectdiscovery_priority: 50  # Higher priority (checked first when enabled)
+projectdiscovery_api_key: ""  # Your ProjectDiscovery API key
 
+# =============================================================================
+# Server Configuration
+# =============================================================================
 context_folder: context
 repo_folder: repo
 prompts_folder: prompts

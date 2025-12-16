@@ -1,15 +1,21 @@
 from waf_rule_mpc.waf_context_manager import WirefilterWAFContextManager
-from waf_rule_mpc.cve_source_manager import CVESourceManager
+from waf_rule_mpc.plugins import CVEPluginManager
 import logging
 import time
 import threading
 
 logger = logging.getLogger(__name__)
 
+
 class ResourceUpdater:
-    def __init__(self, waf_context_manager: WirefilterWAFContextManager, cve_source_manager: CVESourceManager, interval_hours: float):
+    def __init__(
+        self,
+        waf_context_manager: WirefilterWAFContextManager,
+        plugin_manager: CVEPluginManager,
+        interval_hours: float
+    ):
         self.waf_context_manager = waf_context_manager
-        self.cve_source_manager = cve_source_manager
+        self.plugin_manager = plugin_manager
         self.interval = interval_hours * 3600
         self._thread = None
         self._running = False
@@ -20,11 +26,15 @@ class ResourceUpdater:
         """
         while self._running:
             try:
-                # Only update CVE repositories (nuclei templates)
-                # Context files are now local and don't need to be downloaded
-                self.cve_source_manager.clone_cve_repositories()
+                # Update all CVE source plugins
+                results = self.plugin_manager.update_all()
+                for plugin_name, success in results.items():
+                    if success:
+                        logger.info(f"Successfully updated plugin: {plugin_name}")
+                    else:
+                        logger.warning(f"Failed to update plugin: {plugin_name}")
             except Exception as e:
-                logger.error(f"Error fetching resources: {e}")
+                logger.error(f"Error updating resources: {e}")
 
             time.sleep(self.interval)
 
@@ -34,7 +44,7 @@ class ResourceUpdater:
             self._running = True
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
-            logger.info(f"Periodic resource update started. Updating resource every {self.interval/3600} hours.")
+            logger.info(f"Periodic resource update started. Updating every {self.interval/3600} hours.")
 
     def stop(self):
         """Stops the periodic fetching of resources."""

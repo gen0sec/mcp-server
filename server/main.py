@@ -5,9 +5,11 @@ import argparse
 import uvicorn
 import signal
 import sys
+from http import HTTPStatus
+from starlette.responses import Response
 
 from waf_rule_mpc.config import Config
-from waf_rule_mpc.cve_source_manager import CVESourceManager
+from waf_rule_mpc.plugins import CVEPluginManager, NucleiOpenSourcePlugin, ProjectDiscoveryPlugin
 from waf_rule_mpc.waf_context_manager import WirefilterWAFContextManager
 from waf_rule_mpc.prompt_manager import PromptManager
 from waf_rule_mpc.tools import WAFValidator
@@ -21,35 +23,50 @@ config_path = Path(__file__).parent / "config.yaml"
 config = Config().from_yaml(config_path)
 logger.info(f"WAF Validation API URL: {config.WAF_VALIDATION_API_URL}")
 
-# Initialize resource managers
-cve_source_manager = CVESourceManager(
-    config.EXPLOIT_REPOSITORIES,
-    config.REPO_FOLDER,
-    config.NUCLEI_TEMPLATES_VERSION,
-    config.NUCLEI_TEMPLATES_AUTO_UPDATE
-)
+# Initialize plugin manager
+plugin_manager = CVEPluginManager()
+
+# Register Nuclei Open Source plugin
+if config.NUCLEI_OPENSOURCE_ENABLED:
+    nuclei_oss_plugin = NucleiOpenSourcePlugin(
+        repo_folder=str(config.REPO_FOLDER),
+        version=config.NUCLEI_TEMPLATES_VERSION,
+        auto_update=config.NUCLEI_TEMPLATES_AUTO_UPDATE,
+        priority=config.NUCLEI_OPENSOURCE_PRIORITY,
+        enabled=True
+    )
+    plugin_manager.register(nuclei_oss_plugin)
+    logger.info(f"Nuclei Open Source plugin registered (priority={config.NUCLEI_OPENSOURCE_PRIORITY})")
+
+# Register ProjectDiscovery plugin
+if config.PROJECTDISCOVERY_ENABLED and config.PROJECTDISCOVERY_API_KEY:
+    projectdiscovery_plugin = ProjectDiscoveryPlugin(
+        api_key=config.PROJECTDISCOVERY_API_KEY,
+        priority=config.PROJECTDISCOVERY_PRIORITY,
+        enabled=True
+    )
+    plugin_manager.register(projectdiscovery_plugin)
+    logger.info(f"ProjectDiscovery plugin registered (priority={config.PROJECTDISCOVERY_PRIORITY})")
+elif config.PROJECTDISCOVERY_ENABLED:
+    logger.warning("ProjectDiscovery plugin enabled but no API key provided")
+
+# Initialize other managers
 waf_context_manager = WirefilterWAFContextManager(config.WAF_CONTEXT_URLS, config.CONTEXT_FOLDER)
 prompt_manager = PromptManager(config.PROMPTS_FOLDER)
 
-# Initialize and start resource updator
-resource_updater = ResourceUpdater(waf_context_manager, cve_source_manager, config.RESOURCE_UPDATE_INTERVAL)
-
-# Always download nuclei templates at startup (if version is configured or auto-update is enabled)
-# This ensures templates are available even if resource updater isn't running
-if config.NUCLEI_TEMPLATES_VERSION or config.NUCLEI_TEMPLATES_AUTO_UPDATE:
-    if config.NUCLEI_TEMPLATES_AUTO_UPDATE:
-        logger.info("Auto-update enabled: downloading latest nuclei-templates at startup...")
+# Initialize plugins at startup
+logger.info("Initializing CVE source plugins...")
+init_results = plugin_manager.initialize_all()
+for plugin_name, success in init_results.items():
+    if success:
+        logger.info(f"Initialized: {plugin_name}")
     else:
-        logger.info(f"Downloading nuclei-templates version {config.NUCLEI_TEMPLATES_VERSION} at startup...")
-    try:
-        cve_source_manager.clone_cve_repositories()
-    except Exception as e:
-        logger.error(f"Failed to download nuclei-templates at startup: {e}")
+        logger.warning(f"Failed to initialize: {plugin_name}")
 
-# Start resource updater for periodic updates
-# Note: Context files are now local, but we still need periodic updates for nuclei templates
+# Initialize and start resource updater
+resource_updater = ResourceUpdater(waf_context_manager, plugin_manager, config.RESOURCE_UPDATE_INTERVAL)
 resource_updater.start()
-logger.info("Resource updater started for periodic nuclei-templates updates.")
+logger.info("Resource updater started for periodic plugin updates.")
 
 # Setup signal handlers for clean shutdown
 def signal_handler(signum, frame):
@@ -61,13 +78,83 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+# Workaround for MCP Python SDK bug: return 404 instead of 400 when session ID is missing/invalid
+def patch_streamable_http_session_manager():
+    try:
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    except Exception as e:
+        logger.warning(f"StreamableHTTPSessionManager patch skipped (import failed): {e}")
+        return
+
+    original_handle = StreamableHTTPSessionManager._handle_stateful_request
+
+    # https://github.com/modelcontextprotocol/python-sdk/issues/1727
+    async def _patched_handle_stateful_request(self, scope, receive, send):
+        """Patched version that converts 400 to 404 for invalid session IDs."""
+        pending_start = None  # Buffer for start message if we see a 400
+
+        async def patched_send(message):
+            nonlocal pending_start
+
+            msg_type = message.get("type")
+
+            if msg_type == "http.response.start":
+                status = message.get("status", 200)
+                # If it's a 400, buffer it and wait for body to confirm
+                if status == HTTPStatus.BAD_REQUEST:
+                    pending_start = message
+                    return  # Don't send yet
+                else:
+                    # For non-400, send immediately
+                    await send(message)
+                    return
+
+            elif msg_type == "http.response.body":
+                # If we have a pending 400 start message, check the body
+                if pending_start is not None:
+                    body = message.get("body", b"")
+                    body_str = body.decode("utf-8", errors="ignore") if isinstance(body, bytes) else str(body)
+
+                    # If it's the session ID error, change to 404
+                    if "No valid session ID provided" in body_str:
+                        # Send 404 start message instead
+                        await send({
+                            "type": "http.response.start",
+                            "status": HTTPStatus.NOT_FOUND,
+                            "headers": pending_start.get("headers", []),
+                        })
+                    else:
+                        # Not the session ID error, send original 400
+                        await send(pending_start)
+
+                    pending_start = None
+                    # Send body as-is
+                    await send(message)
+                    return
+                else:
+                    # No pending start, forward normally
+                    await send(message)
+                    return
+
+            # For any other message type, forward as-is
+            await send(message)
+
+        # Call original with patched send
+        await original_handle(self, scope, receive, patched_send)
+
+    StreamableHTTPSessionManager._handle_stateful_request = _patched_handle_stateful_request
+    logger.info("Applied 400->404 workaround for missing/invalid MCP session ID.")
+
+# Apply the workaround before server start
+patch_streamable_http_session_manager()
+
 # Initialize the WAF validator service
 waf_validator = WAFValidator(validation_url=config.WAF_VALIDATION_API_URL)
 
 # Initialize the MCP server
 mcp = FastMCP("WAF rule generation", json_response=True)
 
-# Add resoruces to the MCP server
+# Add resources to the MCP server
 @mcp.resource("wafcontext://actions")
 def waf_actions():
     """Reference on actions available in the Rules language."""
@@ -102,20 +189,64 @@ def waf_values():
 @mcp.tool(
     name="fetch_cve_vulnerability_template",
     title="Fetch CVE vulnerability template",
-    description="Retrieve a CVE Indexed vulnerability template, providing additional information for the exploit. The returned file is a CVE Vulnerability Template that packages all relevant information about a specific CVE, including its metadata, severity, description, references, classification, and characteristic request patterns. It also includes protocol flows, payload structures, and contextual artifacts that help security systems or LLMs derive precise defensive controls—such as intrusion signatures, anomaly indicators, or WAF rule recommendations."
+    description="Retrieve a CVE Indexed vulnerability template from multiple sources (Nuclei Open Source, Nuclei Paid API). Returns detailed information for the exploit including metadata, severity, description, references, classification, and characteristic request patterns."
 )
-def fetch_cve_vulnerability_template(cve_id: str) -> dict:
+def fetch_cve_vulnerability_template(cve_id: str, source: str = None) -> dict:
     """
-    Retrieve a CVE Indexed vulnerability template, providing additional information for the exploit.
+    Retrieve a CVE Indexed vulnerability template from configured sources.
 
-    The returned file is a CVE Vulnerability Template that packages all relevant information about a specific CVE,
-    including its metadata, severity, description, references, classification, and characteristic request patterns.
-    It also includes protocol flows, payload structures, and contextual artifacts
-    that help security systems or LLMs derive precise defensive controls—such as
-    intrusion signatures, anomaly indicators, or WAF rule recommendations.
+    The server queries CVE sources in priority order. The first source to return data wins.
+
+    Args:
+        cve_id: The CVE identifier (e.g., "CVE-2025-55182")
+        source: Optional specific source to query (e.g., "Nuclei Paid (ProjectDiscovery API)")
+
+    Returns:
+        Dictionary containing CVE data including:
+        - success: Whether CVE was found
+        - cve_id: The CVE identifier
+        - source: Which plugin returned the data
+        - content: The vulnerability template content
+        - metadata: Additional information from the source
     """
-    result = cve_source_manager.fetch_cve_file(cve_id)
+    result = plugin_manager.fetch_cve(cve_id, source)
     return result
+
+
+@mcp.tool(
+    name="list_cve_sources",
+    title="List CVE sources",
+    description="List all registered CVE source plugins and their status."
+)
+def list_cve_sources() -> dict:
+    """
+    List all registered CVE source plugins.
+
+    Returns:
+        Dictionary containing list of plugins with their status
+    """
+    return {
+        "sources": plugin_manager.list_plugins()
+    }
+
+
+@mcp.tool(
+    name="fetch_cve_from_all_sources",
+    title="Fetch CVE from all sources",
+    description="Fetch CVE vulnerability template from ALL enabled sources. Useful for comparing data across different sources."
+)
+def fetch_cve_from_all_sources(cve_id: str) -> dict:
+    """
+    Fetch CVE data from all enabled sources.
+
+    Args:
+        cve_id: The CVE identifier (e.g., "CVE-2025-55182")
+
+    Returns:
+        Dictionary containing results from all sources
+    """
+    return plugin_manager.fetch_cve_from_all(cve_id)
+
 
 @mcp.tool(
     name="validate_waf_expression",
