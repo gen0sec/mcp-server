@@ -1,8 +1,8 @@
 {
   "manifest_version": "0.2",
   "name": "Gen0Sec WAF Rule Generation MCP Server",
-  "version": "0.0.2",
-  "description": "Generate WAF rules and provide context information about WAF rules.",
+  "version": "0.0.3",
+  "description": "Generate WAF rules and provide context information about WAF rules. Supports multiple CVE data sources including Nuclei Open Source and Nuclei Paid (ProjectDiscovery API).",
   "author": {
     "name": "Gen0Sec",
     "email": "hello@gen0sec.com",
@@ -24,7 +24,12 @@
         "PYTHONPATH": "${__dirname}/server/lib",
         "WAF_VALIDATION_API_URL": "${user_config.validation_api_url}",
         "NUCLEI_TEMPLATES_VERSION": "${user_config.nuclei_templates_version}",
-        "NUCLEI_TEMPLATES_AUTO_UPDATE": "${user_config.nuclei_templates_auto_update}"
+        "NUCLEI_TEMPLATES_AUTO_UPDATE": "${user_config.nuclei_templates_auto_update}",
+        "NUCLEI_OPENSOURCE_ENABLED": "${user_config.nuclei_opensource_enabled}",
+        "NUCLEI_OPENSOURCE_PRIORITY": "${user_config.nuclei_opensource_priority}",
+        "PROJECTDISCOVERY_ENABLED": "${user_config.projectdiscovery_enabled}",
+        "PROJECTDISCOVERY_API_KEY": "${user_config.projectdiscovery_api_key}",
+        "PROJECTDISCOVERY_PRIORITY": "${user_config.projectdiscovery_priority}"
       }
     }
   },
@@ -36,6 +41,13 @@
       "description": "Path to the Python executable (python3 or python). Defaults to 'python3'.",
       "required": false
     },
+    "workspace_directory": {
+      "type": "directory",
+      "default": "",
+      "title": "Workspace directory",
+      "description": "Optional workspace directory for the server.",
+      "required": false
+    },
     "validation_api_url": {
       "type": "string",
       "default": "https://public.gen0sec.com/v1/waf/validate",
@@ -43,18 +55,53 @@
       "description": "Full path to the WAF validation API URL. This value is passed as WAF_VALIDATION_API_URL environment variable and takes precedence over config.yaml when running as MCP extension.",
       "required": false
     },
+    "nuclei_opensource_enabled": {
+      "type": "boolean",
+      "default": true,
+      "title": "Enable Nuclei Open Source plugin",
+      "description": "Enable the Nuclei Open Source plugin which fetches CVE templates from the free GitHub repository.",
+      "required": false
+    },
+    "nuclei_opensource_priority": {
+      "type": "number",
+      "default": 100,
+      "title": "Nuclei Open Source priority",
+      "description": "Priority for the Nuclei Open Source plugin. Lower numbers are checked first. Default: 100.",
+      "required": false
+    },
     "nuclei_templates_version": {
       "type": "string",
       "default": "v10.3.5",
       "title": "Nuclei templates version",
-      "description": "Version tag of nuclei-templates to download (e.g., v10.3.5). This value is passed as NUCLEI_TEMPLATES_VERSION environment variable and takes precedence over config.yaml when running as MCP extension. Ignored if nuclei_templates_auto_update is enabled.",
+      "description": "Version tag of nuclei-templates to download (e.g., v10.3.5). Ignored if nuclei_templates_auto_update is enabled.",
       "required": false
     },
     "nuclei_templates_auto_update": {
       "type": "boolean",
       "default": true,
       "title": "Auto-update nuclei templates",
-      "description": "If enabled, automatically downloads the latest nuclei-templates release from GitHub, ignoring the fixed version. This value is passed as NUCLEI_TEMPLATES_AUTO_UPDATE environment variable and takes precedence over config.yaml when running as MCP extension. If disabled, uses the version specified in nuclei_templates_version.",
+      "description": "If enabled, automatically downloads the latest nuclei-templates release from GitHub.",
+      "required": false
+    },
+    "projectdiscovery_enabled": {
+      "type": "boolean",
+      "default": false,
+      "title": "Enable ProjectDiscovery plugin",
+      "description": "Enable the ProjectDiscovery plugin which fetches CVE data from the ProjectDiscovery API. Requires an API key.",
+      "required": false
+    },
+    "projectdiscovery_api_key": {
+      "type": "string",
+      "default": "",
+      "title": "ProjectDiscovery API Key",
+      "description": "Your ProjectDiscovery API key for accessing premium vulnerability data. Get your key at https://cloud.projectdiscovery.io/",
+      "required": false
+    },
+    "projectdiscovery_priority": {
+      "type": "number",
+      "default": 50,
+      "title": "ProjectDiscovery priority",
+      "description": "Priority for the ProjectDiscovery plugin. Lower numbers are checked first. Default: 50 (higher priority than open source).",
       "required": false
     }
   },
@@ -75,7 +122,10 @@
     "appsec",
     "scenario",
     "parser",
-    "yaml"
+    "yaml",
+    "nuclei",
+    "projectdiscovery",
+    "cve"
   ],
   "license": "MIT",
   "repository": {

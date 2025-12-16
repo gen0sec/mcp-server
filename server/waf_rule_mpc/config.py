@@ -1,12 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import yaml
 from pathlib import Path
 import os
+from typing import Optional
 
 @dataclass
 class Config:
     WAF_CONTEXT_URLS: tuple[dict] = ()
-    EXPLOIT_REPOSITORIES: tuple[str] = ()
     WAF_VALIDATION_API_URL: str = "https://public.gen0sec.com/v1/waf/validate"
     CONTEXT_FOLDER: str = "context"
     REPO_FOLDER: str = "repo"
@@ -14,6 +14,13 @@ class Config:
     RESOURCE_UPDATE_INTERVAL: float = 24
     NUCLEI_TEMPLATES_VERSION: str = "v10.3.5"
     NUCLEI_TEMPLATES_AUTO_UPDATE: bool = False
+
+    # Plugin configuration
+    NUCLEI_OPENSOURCE_ENABLED: bool = True
+    NUCLEI_OPENSOURCE_PRIORITY: int = 100
+    PROJECTDISCOVERY_ENABLED: bool = False
+    PROJECTDISCOVERY_API_KEY: Optional[str] = None
+    PROJECTDISCOVERY_PRIORITY: int = 50  # Higher priority (lower number) than open source
 
     @classmethod
     def from_yaml(cls, filepath: str) -> "Config":
@@ -65,14 +72,43 @@ class Config:
         if not isinstance(nuclei_templates_auto_update, bool):
             raise TypeError("nuclei_templates_auto_update must be a boolean.")
 
+        # Plugin configuration
+        nuclei_opensource_enabled_raw = get_env_or_config("NUCLEI_OPENSOURCE_ENABLED", "nuclei_opensource_enabled", cls.NUCLEI_OPENSOURCE_ENABLED)
+        if isinstance(nuclei_opensource_enabled_raw, str):
+            nuclei_opensource_enabled = nuclei_opensource_enabled_raw.lower() in ("true", "1", "yes", "on")
+        else:
+            nuclei_opensource_enabled = bool(nuclei_opensource_enabled_raw)
+
+        nuclei_opensource_priority_raw = get_env_or_config("NUCLEI_OPENSOURCE_PRIORITY", "nuclei_opensource_priority", cls.NUCLEI_OPENSOURCE_PRIORITY)
+        nuclei_opensource_priority = int(nuclei_opensource_priority_raw)
+
+        projectdiscovery_enabled_raw = get_env_or_config("PROJECTDISCOVERY_ENABLED", "projectdiscovery_enabled", cls.PROJECTDISCOVERY_ENABLED)
+        if isinstance(projectdiscovery_enabled_raw, str):
+            projectdiscovery_enabled = projectdiscovery_enabled_raw.lower() in ("true", "1", "yes", "on")
+        else:
+            projectdiscovery_enabled = bool(projectdiscovery_enabled_raw)
+
+        projectdiscovery_api_key = get_env_or_config("PROJECTDISCOVERY_API_KEY", "projectdiscovery_api_key", cls.PROJECTDISCOVERY_API_KEY)
+        if projectdiscovery_api_key:
+            projectdiscovery_api_key = str(projectdiscovery_api_key).strip()
+            if not projectdiscovery_api_key:
+                projectdiscovery_api_key = None
+
+        projectdiscovery_priority_raw = get_env_or_config("PROJECTDISCOVERY_PRIORITY", "projectdiscovery_priority", cls.PROJECTDISCOVERY_PRIORITY)
+        projectdiscovery_priority = int(projectdiscovery_priority_raw)
+
         return cls(
             WAF_CONTEXT_URLS=data.get("waf_context_urls", cls.WAF_CONTEXT_URLS),
-            EXPLOIT_REPOSITORIES=data.get("exploit_repositories", cls.EXPLOIT_REPOSITORIES),
             WAF_VALIDATION_API_URL=validation_api_url,
             CONTEXT_FOLDER=context_folder,
             PROMPTS_FOLDER=prompts_folder,
             REPO_FOLDER=repo_folder,
             RESOURCE_UPDATE_INTERVAL=resource_update_interval,
             NUCLEI_TEMPLATES_VERSION=nuclei_templates_version,
-            NUCLEI_TEMPLATES_AUTO_UPDATE=nuclei_templates_auto_update
+            NUCLEI_TEMPLATES_AUTO_UPDATE=nuclei_templates_auto_update,
+            NUCLEI_OPENSOURCE_ENABLED=nuclei_opensource_enabled,
+            NUCLEI_OPENSOURCE_PRIORITY=nuclei_opensource_priority,
+            PROJECTDISCOVERY_ENABLED=projectdiscovery_enabled,
+            PROJECTDISCOVERY_API_KEY=projectdiscovery_api_key,
+            PROJECTDISCOVERY_PRIORITY=projectdiscovery_priority,
         )
