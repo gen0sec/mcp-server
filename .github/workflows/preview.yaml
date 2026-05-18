@@ -5,6 +5,11 @@ on:
       branches:
         - main
 
+# Preview only validates that the image builds; it never pushes, so it
+# needs no registry write access.
+permissions:
+  contents: read
+
 env:
   GEN0SEC_MCP_SERVER_REGISTRY_IMAGE: ghcr.io/gen0sec/mcp-server/gen0sec-mcp-server
 
@@ -73,13 +78,6 @@ jobs:
           name: gen0sec-mcp-server-bake-meta
           path: ${{ runner.temp }}
 
-      - name: Login to Github Packages
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
@@ -97,4 +95,4 @@ jobs:
           set: |
             *.tags=${{ env.GEN0SEC_MCP_SERVER_REGISTRY_IMAGE }}
             *.platform=${{ matrix.platform }}
-            *.output=type=image,push-by-digest=true,name-canonical=true,push=true
+            *.output=type=cacheonly
