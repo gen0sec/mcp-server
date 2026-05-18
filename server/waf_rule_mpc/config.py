@@ -2,12 +2,15 @@ from dataclasses import dataclass, field
 import yaml
 from pathlib import Path
 import os
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Config:
     WAF_CONTEXT_URLS: tuple[dict] = ()
-    WAF_VALIDATION_API_URL: str = "https://public.gen0sec.com/v1/waf/validate"
+    RULES_VALIDATOR_URL: str = "https://public.gen0sec.com/v1/rules/validate"
     CONTEXT_FOLDER: str = "context"
     REPO_FOLDER: str = "repo"
     PROMPTS_FOLDER: str = "prompts"
@@ -57,7 +60,26 @@ class Config:
                 return env_val
             return data.get(config_key, default)
 
-        validation_api_url = get_env_or_config("WAF_VALIDATION_API_URL", "waf_validation_api_url", cls.WAF_VALIDATION_API_URL)
+        # Rules-validator URL. Prefer the new RULES_VALIDATOR_URL /
+        # rules_validator_url; fall back to the deprecated
+        # WAF_VALIDATION_API_URL / waf_validation_api_url (with a warning).
+        _UNSET = object()
+        rules_validator_url = get_env_or_config(
+            "RULES_VALIDATOR_URL", "rules_validator_url", _UNSET
+        )
+        if rules_validator_url is _UNSET:
+            legacy_url = get_env_or_config(
+                "WAF_VALIDATION_API_URL", "waf_validation_api_url", _UNSET
+            )
+            if legacy_url is not _UNSET:
+                logger.warning(
+                    "WAF_VALIDATION_API_URL / waf_validation_api_url is "
+                    "deprecated; use RULES_VALIDATOR_URL / rules_validator_url "
+                    "pointing at the /v1/rules/validate endpoint."
+                )
+                rules_validator_url = legacy_url
+            else:
+                rules_validator_url = cls.RULES_VALIDATOR_URL
         nuclei_templates_version_raw = get_env_or_config("NUCLEI_TEMPLATES_VERSION", "nuclei_templates_version", cls.NUCLEI_TEMPLATES_VERSION)
         nuclei_templates_version = nuclei_templates_version_raw if nuclei_templates_version_raw.startswith('v') else f"v{nuclei_templates_version_raw}"
 
@@ -99,7 +121,7 @@ class Config:
 
         return cls(
             WAF_CONTEXT_URLS=data.get("waf_context_urls", cls.WAF_CONTEXT_URLS),
-            WAF_VALIDATION_API_URL=validation_api_url,
+            RULES_VALIDATOR_URL=rules_validator_url,
             CONTEXT_FOLDER=context_folder,
             PROMPTS_FOLDER=prompts_folder,
             REPO_FOLDER=repo_folder,

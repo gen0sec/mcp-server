@@ -7,7 +7,12 @@
 # 2. This config.yaml file (for standalone usage)
 # 3. Default values in code
 
-waf_validation_api_url: https://public.gen0sec.com/v1/waf/validate
+# rules-validator API endpoint (validates WAF and Smart Firewall Wirefilter
+# expressions; rule_type selects the scheme). Override with the
+# RULES_VALIDATOR_URL env var.
+rules_validator_url: https://public.gen0sec.com/v1/rules/validate
+# Deprecated alias (still honoured with a warning if rules_validator_url is unset):
+# waf_validation_api_url: https://public.gen0sec.com/v1/waf/validate
 
 
 # =============================================================================
