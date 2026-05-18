@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gen0sec/mcp-server/main/icon.png" alt="Gen0Sec" width="140">
+  <img src="./images/logo.svg" alt="Gen0Sec" width="280">
 </p>
 
 <p align="center">
