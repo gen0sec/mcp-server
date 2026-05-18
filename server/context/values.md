@@ -39,11 +39,11 @@ The quoted string syntax has the following additional escaping requirements:
 
 ```txt
 # Test if URI path contains 'a"b'
-http.request.uri.path matches "a\"b"
+http.request.path matches "a\"b"
 
 
 # Test if URI path contains 'a"#b'
-http.request.uri.path matches "a\"#b"
+http.request.path matches "a\"#b"
 
 
 # Replace 'a' with '\' (backslash)
@@ -71,11 +71,11 @@ Unlike the quoted string syntax, the raw string syntax is always the same, regar
 
 ```txt
 # Test if URI path contains 'a"b'
-http.request.uri.path matches r#"a"b"#
+http.request.path matches r#"a"b"#
 
 
 # Test if URI path contains 'a"#b'
-http.request.uri.path matches r##"a"#b"##
+http.request.path matches r##"a"#b"##
 
 
 # Replace '\' (backslash) with 'a'
@@ -85,7 +85,7 @@ regex_replace(http.request.host, r"\\", "a")
 
 # Test if URI path ends with '/api/login.aspx'
 # You must still escape the '.' character in the following raw string because it has a special meaning in regular expressions ("any character")
-http.request.uri.path matches r"/api/login\.aspx$"
+http.request.path matches r"/api/login\.aspx$"
 ```
 
 ### Case sensitivity and regular expressions in values

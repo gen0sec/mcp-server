@@ -5,6 +5,7 @@ Before generating a rule, always consult the MCP resources:
     wafcontext://actions — available WAF actions
     wafcontext://expressions — available expressions
     wafcontext://fields — available fields
+    get_rule_fields tool (rule_type="waf") — AUTHORITATIVE live field list from the validator; prefer it over wafcontext://fields, and pass rule_type="waf" to validate_waf_expression / validate_waf_expression_with_tests
     wafcontext://functions — available functions
     wafcontext://operators — valid operators
     wafcontext://values — valid values
@@ -22,14 +23,14 @@ Ensure the result follows the WAF rules language's structure and formatting.
 If multiple structures could satisfy the request, choose the simplest correct version.
 
 4. Validate the Rule
-Use the validate_waf_rule tool to check the syntax of the generated rule.
+Use the validate_waf_expression tool to check the syntax of the generated rule.
 If validation fails, revise the rule and validate again until it succeeds.
 
 5. Create Test Cases
 Generate at least two HTTP request examples:
     one that should match the rule
     one that should not match
-Use the validate_waf_rule_with_tests tool to confirm the rule behaves correctly for each case.
+Use the validate_waf_expression_with_tests tool to confirm the rule behaves correctly for each case.
 If any test fails, fix the rule and re-validate.
 
 6. Present the Final Answer

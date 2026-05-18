@@ -1,4 +1,4 @@
-"""Pytest config: make the `waf_rule_mpc` package importable from `server/`."""
+"""Pytest config: make the `waf_rule_mcp` package importable from `server/`."""
 import sys
 from pathlib import Path
 

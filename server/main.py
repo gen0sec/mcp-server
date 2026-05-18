@@ -8,12 +8,12 @@ import sys
 from http import HTTPStatus
 from starlette.responses import Response
 
-from waf_rule_mpc.config import Config
-from waf_rule_mpc.plugins import CVEPluginManager, NucleiOpenSourcePlugin, ProjectDiscoveryPlugin
-from waf_rule_mpc.waf_context_manager import WirefilterWAFContextManager
-from waf_rule_mpc.prompt_manager import PromptManager
-from waf_rule_mpc.tools import RulesValidator
-from waf_rule_mpc.resource_updater import ResourceUpdater
+from waf_rule_mcp.config import Config
+from waf_rule_mcp.plugins import CVEPluginManager, NucleiOpenSourcePlugin, ProjectDiscoveryPlugin
+from waf_rule_mcp.waf_context_manager import WirefilterWAFContextManager
+from waf_rule_mcp.prompt_manager import PromptManager
+from waf_rule_mcp.tools import RulesValidator
+from waf_rule_mcp.resource_updater import ResourceUpdater
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -267,12 +267,12 @@ def validate_waf_expression(expression: str, rule_type: str = "waf", test: dict 
 
     Expected Input Example (without test):
     {
-        "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.uri.path contains \"/admin\")"
+        "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.path contains \"/admin\")"
     }
 
     Expected Input Example (with test):
     {
-        "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.uri.path contains \"/admin\")",
+        "expression": "(ip.src in {10.0.0.1 10.0.0.2}) and (http.request.path contains \"/admin\")",
         "test": {
             "http.request.method": "GET",
             "http.request.path": "/admin/dashboard",
@@ -346,7 +346,7 @@ def validate_waf_expression_with_tests(rule: str, rule_type: str = "waf", test: 
 
     Example Input:
     {
-    "rule": "(ip.src in {\"10.0.0.1\", \"10.0.0.2\"}) and (http.request.uri.path contains \"/admin\")",
+    "rule": "(ip.src in {\"10.0.0.1\", \"10.0.0.2\"}) and (http.request.path contains \"/admin\")",
     "test": {
         "http.request.method": "GET",
         "http.request.scheme": "https",
@@ -411,6 +411,35 @@ def get_waf_context():
 
     return result
 
+@mcp.tool(
+    name="get_rule_fields",
+    title="Get authoritative rule fields (WAF or Smart Firewall)",
+    description="Fetch the live, authoritative Wirefilter field/function schema directly from the rules-validator for the given rule_type ('waf' = HTTP L7 fields; 'smart_firewall' = L3/L4 + JA4 fields, no http.*). This is the single source of truth and never drifts from what validation accepts — prefer it over the static wafcontext://fields resource when building expressions. Falls back to static context if the validator is unreachable."
+)
+def get_rule_fields(rule_type: str = "waf") -> dict:
+    """
+    Return the exact fields/functions the validator accepts for rule_type.
+
+    Input:
+    rule_type (string, optional) — "waf" (default) or "smart_firewall".
+
+    Output:
+    {
+      "success": bool,
+      "rule_type": str,
+      "fields": { "<field>": {"type": str, "description": str, "example": any}, ... },
+      "functions": [ {...}, ... ]
+    }
+    On validator-unreachable, returns success=false plus a static_fallback
+    string (the bundled fields doc) for "waf"; smart_firewall has no static
+    fallback (its scheme only exists in the validator).
+    """
+    out = rules_validator.get_fields(rule_type)
+    if not out.get("success"):
+        if rules_validator._normalize_rule_type(rule_type) == "waf":
+            out["static_fallback"] = waf_context_manager.read_context_file("fields")
+    return out
+
 # Add prompts to the MCP server
 @mcp.prompt(
     name="natural_waf_rule_generation_prompt",
@@ -429,6 +458,16 @@ def natural_waf_rule_generation_prompt() -> str:
 )
 def cve_waf_rule_generation_prompt() -> str:
     prompt = prompt_manager.read_prompt_file("gen_from_cve")
+    return prompt
+
+@mcp.prompt(
+    name="smart_firewall_rule_generation_prompt",
+    title="Smart Firewall rule generation from natural language",
+    description="Outlines steps for generating an L3/L4 + JA4 Smart Firewall rule (no http.* fields; actions block/allow) from a natural language description"
+)
+def smart_firewall_rule_generation_prompt() -> str:
+    """Returns a prompt that outlines the steps for generating a Smart Firewall rule"""
+    prompt = prompt_manager.read_prompt_file("gen_smart_firewall")
     return prompt
 
 
