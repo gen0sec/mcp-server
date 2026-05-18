@@ -12,7 +12,7 @@ from waf_rule_mpc.config import Config
 from waf_rule_mpc.plugins import CVEPluginManager, NucleiOpenSourcePlugin, ProjectDiscoveryPlugin
 from waf_rule_mpc.waf_context_manager import WirefilterWAFContextManager
 from waf_rule_mpc.prompt_manager import PromptManager
-from waf_rule_mpc.tools import WAFValidator
+from waf_rule_mpc.tools import RulesValidator
 from waf_rule_mpc.resource_updater import ResourceUpdater
 
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Initialize configuration
 config_path = Path(__file__).parent / "config.yaml"
 config = Config().from_yaml(config_path)
-logger.info(f"WAF Validation API URL: {config.WAF_VALIDATION_API_URL}")
+logger.info(f"Rules Validator URL: {config.RULES_VALIDATOR_URL}")
 
 # Initialize plugin manager
 plugin_manager = CVEPluginManager()
@@ -148,8 +148,8 @@ def patch_streamable_http_session_manager():
 # Apply the workaround before server start
 patch_streamable_http_session_manager()
 
-# Initialize the WAF validator service
-waf_validator = WAFValidator(validation_url=config.WAF_VALIDATION_API_URL)
+# Initialize the rules-validator client (WAF + Smart Firewall)
+rules_validator = RulesValidator(validation_url=config.RULES_VALIDATOR_URL)
 
 # Initialize the MCP server
 mcp = FastMCP("WAF rule generation", json_response=True)
@@ -250,15 +250,19 @@ def fetch_cve_from_all_sources(cve_id: str) -> dict:
 
 @mcp.tool(
     name="validate_waf_expression",
-    title="Validate WAF expression",
-    description="Validate a Wirefilter WAF (Web Application Firewall) expression. Optionally test against custom test data. Returns a dictionary with valid (boolean) indicating if the expression is syntactically valid, and error_message (string) containing a human-readable validation error message if invalid."
+    title="Validate a rule expression (WAF or Smart Firewall)",
+    description="Validate a Wirefilter rule expression. rule_type selects the scheme: 'waf' (HTTP L7 fields, default) or 'smart_firewall' (L3/L4 + JA4 fields; http.* fields are NOT available and will be rejected). Optionally test against custom test data. Returns a dictionary with valid (boolean) and error_message (string) when invalid."
 )
-def validate_waf_expression(expression: str, test: dict = None) -> dict:
+def validate_waf_expression(expression: str, rule_type: str = "waf", test: dict = None) -> dict:
     """
-    Validate a Wirefilter WAF (Web Application Firewall) expression.
+    Validate a Wirefilter rule expression (WAF or Smart Firewall).
 
     Input:
-    expression (string) — A Wirefilter WAF expression to validate.
+    expression (string) — A Wirefilter expression to validate.
+    rule_type (string, optional) — "waf" (default) or "smart_firewall".
+        "waf" validates against the HTTP L7 scheme (http.request.*, etc.).
+        "smart_firewall" validates against the L3/L4 + JA4 scheme
+        (ip.src, ja4*, threat.*); http.* fields are not available for it.
     test (object, optional) — Optional custom test data to use for matching. If provided, the expression will also be tested against this data.
 
     Expected Input Example (without test):
@@ -298,21 +302,25 @@ def validate_waf_expression(expression: str, test: dict = None) -> dict:
         "error_message": "Unexpected token 'andd' at position 23."
     }
     """
-    result = waf_validator.validate_waf_expression(expression, test)
+    result = rules_validator.validate_expression(expression, rule_type, test)
     return result
 
 @mcp.tool(
     name="validate_waf_expression_with_tests",
-    title="Validate WAF expression with tests",
-    description="Validate a Wirefilter WAF rule expression, optionally against a full HTTP request example. Returns a dictionary with valid (boolean), error_message (string), matched (boolean) indicating if the test request matches the rule, and test_error (string) if the test fails."
+    title="Validate a rule expression with tests (WAF or Smart Firewall)",
+    description="Validate a Wirefilter rule expression and match it against test data (mock data if none given). rule_type selects the scheme: 'waf' (HTTP L7, default) or 'smart_firewall' (L3/L4 + JA4; no http.* fields). Returns valid (boolean), error_message (string), matched (boolean), and test_error (string) if the test fails."
 )
-def validate_waf_expression_with_tests(rule: str, test: dict = None) -> dict:
+def validate_waf_expression_with_tests(rule: str, rule_type: str = "waf", test: dict = None) -> dict:
     """
-    Validate a Wirefilter WAF rule expression, optionally against a full HTTP request example.
+    Validate a Wirefilter rule expression, optionally against a full request example.
 
     Input:
-    rule (string) — The WAF rule expression to validate.
-    test (object, optional) — An optional custom test data object used for testing the rule. If not provided, uses default mock data. Includes the following fields:
+    rule (string) — The rule expression to validate.
+    rule_type (string, optional) — "waf" (default) or "smart_firewall".
+        "waf" uses the HTTP L7 scheme; "smart_firewall" uses the L3/L4 + JA4
+        scheme (no http.* fields). The example test fields below are for waf;
+        for smart_firewall use L3/L4 + JA4 fields (e.g. ip.src, signal.ja4t).
+    test (object, optional) — An optional custom test data object used for testing the rule. If not provided, uses default mock data. For waf it includes the following fields:
         http.request.method (string)
         http.request.scheme (string)
         http.request.host (string)
@@ -385,7 +393,7 @@ def validate_waf_expression_with_tests(rule: str, test: dict = None) -> dict:
         "test_error": "Failed to create filter: error building scheme for field 'http.request.port': unsupported type: float64"
     }
     """
-    result = waf_validator.test_waf_expression(rule, test)
+    result = rules_validator.test_expression(rule, rule_type, test)
     return result
 
 @mcp.tool(

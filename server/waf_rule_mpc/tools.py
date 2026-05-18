@@ -3,11 +3,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class WAFValidator:
+# Rule types understood by the rules-validator API. Selects the Wirefilter
+# scheme: "waf" (HTTP L7 fields) or "smart_firewall" (L3/L4 + JA4, no http.*).
+RULE_TYPE_WAF = "waf"
+RULE_TYPE_SMART_FIREWALL = "smart_firewall"
+VALID_RULE_TYPES = (RULE_TYPE_WAF, RULE_TYPE_SMART_FIREWALL)
+
+
+class RulesValidator:
+    """Client for the gen0sec rules-validator API (POST /v1/rules/validate).
+
+    Validates Wirefilter expressions for both WAF and Smart Firewall rules;
+    the scheme is selected per request via ``rule_type``.
+    """
 
     def __init__(self, validation_url: str):
         self.validation_url = validation_url
-        # Use a session to maintain cookies across requests (helps with session management)
+        # Use a session to keep connection/headers across requests.
         self.session = requests.Session()
         self.session.headers.update({
             "Content-Type": "application/json",
@@ -15,39 +27,42 @@ class WAFValidator:
             "User-Agent": "gen0sec-mcp-server/1.0"
         })
 
+    @staticmethod
+    def _normalize_rule_type(rule_type: str) -> str:
+        rt = (rule_type or RULE_TYPE_WAF).strip().lower()
+        if rt not in VALID_RULE_TYPES:
+            raise ValueError(
+                f"invalid rule_type {rule_type!r}; expected one of {VALID_RULE_TYPES}"
+            )
+        return rt
+
     def _api_request(self, payload: dict) -> dict:
-        """
-        Make a POST request to the WAF validation API with the given payload.
+        """POST the payload to the rules-validator API and return the JSON.
 
-        Args:
-            payload (dict): The payload to send in the POST request.
-
-        Returns:
-            dict: The JSON response from the API.
+        On any transport/HTTP error returns ``{"error": ..., "valid": False}``
+        so callers can surface a clean message instead of raising.
         """
         try:
-            # Use session to maintain cookies and headers across requests
             response = self.session.post(self.validation_url, json=payload)
-            print(payload)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as e:
-            # Try to extract error message from response body
             error_msg = f"Error POSTing to endpoint (HTTP {response.status_code})"
             try:
                 error_body = response.json()
                 if isinstance(error_body, dict):
-                    # Try common error message fields
-                    api_error = error_body.get("error") or error_body.get("error_message") or error_body.get("message")
+                    api_error = (
+                        error_body.get("error")
+                        or error_body.get("error_message")
+                        or error_body.get("message")
+                    )
                     if api_error:
                         error_msg = f"{error_msg}: {api_error}"
                     else:
-                        # Fallback to full response if no standard error field
                         error_msg = f"{error_msg}: {response.text[:200]}"
                 else:
                     error_msg = f"{error_msg}: {response.text[:200]}"
             except (ValueError, AttributeError):
-                # If response is not JSON, use status text
                 error_msg = f"{error_msg}: {response.reason or str(e)}"
 
             logger.error(error_msg)
@@ -61,88 +76,85 @@ class WAFValidator:
             logger.error(error_msg)
             return {"error": error_msg, "valid": False}
 
-    def validate_waf_expression(self, expression: str, test_data: dict = None) -> str:
-        """
-        Validates a WAF expression through the WAF validation API.
+    def validate_expression(
+        self, expression: str, rule_type: str = RULE_TYPE_WAF, test_data: dict = None
+    ) -> dict:
+        """Validate a Wirefilter expression for the given rule type.
 
         Args:
-            expression (str): The WAF expression to validate.
-            test_data (dict, optional): Optional custom test data to use for matching.
-                                       If provided, test_match will be set to True.
+            expression: The Wirefilter expression to validate.
+            rule_type: "waf" (default) or "smart_firewall" — selects the
+                Wirefilter scheme the expression is validated against.
+            test_data: Optional custom test data; when provided the
+                expression is also matched against it.
 
         Returns:
-            str: The result of the validation.
+            ``{"valid": bool, "error_message"?: str, "matched"?: bool,
+            "test_error"?: str}``
         """
+        rule_type = self._normalize_rule_type(rule_type)
+        has_test = test_data is not None and len(test_data) > 0
         payload = {
             "expression": expression,
-            "test_match": test_data is not None and len(test_data) > 0
+            "rule_type": rule_type,
+            "test_match": has_test,
         }
-
-        # Add custom test data if provided
-        if test_data is not None and len(test_data) > 0:
+        if has_test:
             payload["test"] = test_data
 
         response = self._api_request(payload)
 
-        # Check if API request itself failed
         if "error" in response:
-            return {
-                "valid": False,
-                "error_message": response["error"]
-            }
+            return {"valid": False, "error_message": response["error"]}
 
-        result = {
-            "valid": response.get("valid", False)
-        }
+        result = {"valid": response.get("valid", False)}
         if not result["valid"]:
-            result["error_message"] = response.get("error_message", response.get("error", "Unknown error"))
-
-        # Include test result if test_match was True
-        if payload["test_match"]:
-            result["matched"] = response.get("test_result", {}).get("matched", False)
-            if response.get("test_result", {}).get("error"):
-                result["test_error"] = response.get("test_result", {}).get("error", "Unknown error")
-
+            result["error_message"] = response.get(
+                "error_message", response.get("error", "Unknown error")
+            )
+        if has_test:
+            test_result = response.get("test_result") or {}
+            result["matched"] = test_result.get("matched", False)
+            if test_result.get("error"):
+                result["test_error"] = test_result.get("error", "Unknown error")
         return result
 
-    def test_waf_expression(self, expression: str, test_data: dict = None) -> dict:
-        """
-        Tests a WAF expression against provided test data through the WAF validation API.
+    def test_expression(
+        self, expression: str, rule_type: str = RULE_TYPE_WAF, test_data: dict = None
+    ) -> dict:
+        """Validate and match an expression against test data (mock if none).
 
-        Args:
-            expression (str): The WAF expression to test.
-            test_data (dict, optional): The custom test data to use for matching.
-                                       If not provided, uses default mock data.
-
-        Returns:
-            dict: The result of the test including match information.
+        Returns ``{"valid": bool, "matched": bool, "error"?: str,
+        "test_error"?: str}``.
         """
+        rule_type = self._normalize_rule_type(rule_type)
         payload = {
             "expression": expression,
-            "test_match": True
+            "rule_type": rule_type,
+            "test_match": True,
         }
-
-        # Add custom test data if provided
         if test_data is not None and len(test_data) > 0:
             payload["test"] = test_data
 
         response = self._api_request(payload)
 
-        # Check if API request itself failed
         if "error" in response:
-            return {
-                "valid": False,
-                "matched": False,
-                "error": response["error"]
-            }
+            return {"valid": False, "matched": False, "error": response["error"]}
 
+        test_result = response.get("test_result") or {}
         result = {
             "valid": response.get("valid", False),
-            "matched": response.get("test_result", {}).get("matched", False)
+            "matched": test_result.get("matched", False),
         }
         if not result["valid"]:
-            result["error"] = response.get("error_message", response.get("error", "Unknown error"))
-        if response.get("test_result", {}).get("error"):
-            result["test_error"] = response.get("test_result", {}).get("error", "Unknown error")
-
+            result["error"] = response.get(
+                "error_message", response.get("error", "Unknown error")
+            )
+        if test_result.get("error"):
+            result["test_error"] = test_result.get("error", "Unknown error")
         return result
+
+
+# Backwards-compatible alias: the class was previously named WAFValidator and
+# only handled WAF rules. Kept so any out-of-tree importers keep working.
+WAFValidator = RulesValidator
