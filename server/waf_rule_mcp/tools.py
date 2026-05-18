@@ -1,7 +1,18 @@
-import requests
+import time
 import logging
+from urllib.parse import urlsplit, urlunsplit
+
+import requests
 
 logger = logging.getLogger(__name__)
+
+# Retry only transient transport failures (connect/read timeouts, dropped
+# connections). HTTP 4xx/5xx are returned as-is — they're deterministic for a
+# given expression and retrying would just slow an agent's generate→validate
+# loop.
+_TRANSIENT_EXC = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+_MAX_RETRIES = 2
+_BACKOFF_SECONDS = 0.5
 
 # Rule types understood by the rules-validator API. Selects the Wirefilter
 # scheme: "waf" (HTTP L7 fields) or "smart_firewall" (L3/L4 + JA4, no http.*).
@@ -19,6 +30,14 @@ class RulesValidator:
 
     def __init__(self, validation_url: str):
         self.validation_url = validation_url
+        # Sibling endpoint: .../v1/rules/validate -> .../v1/rules/fields
+        parts = urlsplit(validation_url)
+        path = parts.path
+        if path.endswith("/validate"):
+            path = path[: -len("/validate")] + "/fields"
+        self.fields_url = urlunsplit(
+            (parts.scheme, parts.netloc, path, "", "")
+        )
         # Use a session to keep connection/headers across requests.
         self.session = requests.Session()
         self.session.headers.update({
@@ -36,6 +55,24 @@ class RulesValidator:
             )
         return rt
 
+    def _request_with_retry(self, method: str, url: str, **kwargs):
+        """Issue a request, retrying only transient transport failures."""
+        last_exc = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return self.session.request(method, url, timeout=15, **kwargs)
+            except _TRANSIENT_EXC as e:
+                last_exc = e
+                if attempt < _MAX_RETRIES:
+                    sleep_for = _BACKOFF_SECONDS * (2 ** attempt)
+                    logger.warning(
+                        "rules-validator %s %s transient error (attempt %d/%d): %s; "
+                        "retrying in %.1fs",
+                        method, url, attempt + 1, _MAX_RETRIES + 1, e, sleep_for,
+                    )
+                    time.sleep(sleep_for)
+        raise last_exc
+
     def _api_request(self, payload: dict) -> dict:
         """POST the payload to the rules-validator API and return the JSON.
 
@@ -43,7 +80,9 @@ class RulesValidator:
         so callers can surface a clean message instead of raising.
         """
         try:
-            response = self.session.post(self.validation_url, json=payload)
+            response = self._request_with_retry(
+                "POST", self.validation_url, json=payload
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as e:
@@ -153,6 +192,41 @@ class RulesValidator:
         if test_result.get("error"):
             result["test_error"] = test_result.get("error", "Unknown error")
         return result
+
+
+    def get_fields(self, rule_type: str = RULE_TYPE_WAF) -> dict:
+        """Fetch the authoritative field/function schema from the validator.
+
+        This is the single source of truth for the Wirefilter scheme of the
+        given rule_type ("waf" HTTP L7, or "smart_firewall" L3/L4+JA4), so
+        callers never drift from what the validator actually accepts.
+
+        Returns ``{"success": bool, "rule_type": str, "fields": {...},
+        "functions": [...]}`` or ``{"success": False, "error": str}`` if the
+        validator is unreachable (caller should fall back to static context).
+        """
+        rule_type = self._normalize_rule_type(rule_type)
+        try:
+            resp = self._request_with_retry(
+                "GET", self.fields_url, params={"rule_type": rule_type}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.RequestException as e:
+            msg = f"Could not fetch rule fields: {e}"
+            logger.error(msg)
+            return {"success": False, "rule_type": rule_type, "error": msg}
+        except Exception as e:  # noqa: BLE001
+            msg = f"Unexpected error fetching rule fields: {e}"
+            logger.error(msg)
+            return {"success": False, "rule_type": rule_type, "error": msg}
+
+        return {
+            "success": True,
+            "rule_type": rule_type,
+            "fields": data.get("fields", {}),
+            "functions": data.get("functions", []),
+        }
 
 
 # Backwards-compatible alias: the class was previously named WAFValidator and

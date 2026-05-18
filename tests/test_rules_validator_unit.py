@@ -1,7 +1,7 @@
 """Unit tests for RulesValidator that need no network (always run)."""
 import pytest
 
-from waf_rule_mpc.tools import (
+from waf_rule_mcp.tools import (
     RulesValidator,
     WAFValidator,
     RULE_TYPE_WAF,

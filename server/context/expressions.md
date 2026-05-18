@@ -11,7 +11,7 @@ The Wirefilter WAF Rules language supports two kinds of expressions: simple and 
 **Simple expressions** compare a value from an HTTP request to a value defined in the expression. For example, this simple expression matches Microsoft Exchange Autodiscover requests:
 
 ```txt
-http.request.uri.path matches "/autodiscover\.(xml|src)$"
+http.request.path matches "/autodiscover\.(xml|src)$"
 ```
 
 Simple expressions have the following syntax:

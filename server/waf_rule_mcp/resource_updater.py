@@ -1,5 +1,5 @@
-from waf_rule_mpc.waf_context_manager import WirefilterWAFContextManager
-from waf_rule_mpc.plugins import CVEPluginManager
+from waf_rule_mcp.waf_context_manager import WirefilterWAFContextManager
+from waf_rule_mcp.plugins import CVEPluginManager
 import logging
 import time
 import threading

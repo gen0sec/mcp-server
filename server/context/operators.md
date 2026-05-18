@@ -28,16 +28,16 @@ The Rules language supports these comparison operators:
 | Name | Operator Notation | Supported Data Types | | | | |
 | - | - | - | - | - | - | - |
 | | English | C-like | String1 | IP | Number | Example (operator in bold) |
-| Equal | `eq` | `==` | ✅ | ✅ | ✅ | `http.request.uri.path eq "/articles/2008/"` |
+| Equal | `eq` | `==` | ✅ | ✅ | ✅ | `http.request.path eq "/articles/2008/"` |
 | Not equal | `ne` | `!=` | ✅ | ✅ | ✅ | `ip.src ne 203.0.113.0` |
 | Less than | `lt` | `<` | ✅ | ❌ | ✅ | `threat.score lt 10` |
 | Less than or equal | `le` | `<=` | ✅ | ❌ | ✅ | `threat.score le 20` |
 | Greater than | `gt` | `>` | ✅ | ❌ | ✅ | `threat.score gt 25` |
 | Greater than or equal | `ge` | `>=` | ✅ | ❌ | ✅ | `threat.score ge 60` |
-| Contains | `contains` | | ✅ | ❌ | ❌ | `http.request.uri.path contains "/articles/"` |
-| [Wildcard](#wildcard-matching) (case-insensitive) | `wildcard` | | ✅ | ❌ | ❌ | `http.request.uri.path wildcard "/articles/*"` |
-| [Strict wildcard](#wildcard-matching) (case-sensitive) | `strict wildcard` | | ✅ | ❌ | ❌ | `http.request.uri.path strict wildcard "/AdminTeam/*"` |
-| [Matches regex](#regular-expression-matching)2 | `matches` | `~` | ✅ | ❌ | ❌ | `http.request.uri.path matches "^/articles/200[7-8]/$"` |
+| Contains | `contains` | | ✅ | ❌ | ❌ | `http.request.path contains "/articles/"` |
+| [Wildcard](#wildcard-matching) (case-insensitive) | `wildcard` | | ✅ | ❌ | ❌ | `http.request.path wildcard "/articles/*"` |
+| [Strict wildcard](#wildcard-matching) (case-sensitive) | `strict wildcard` | | ✅ | ❌ | ❌ | `http.request.path strict wildcard "/AdminTeam/*"` |
+| [Matches regex](#regular-expression-matching)2 | `matches` | `~` | ✅ | ❌ | ❌ | `http.request.path matches "^/articles/200[7-8]/$"` |
 | Is in set of values / list3 | `in` | | ✅ | ✅ | ✅ | `ip.src in { 203.0.113.0 203.0.113.1 }` `ip.src.asnum in $<LIST>` |
 
 1 All string operators are case-sensitive unless explicitly stated as case-insensitive, such as the `wildcard` operator.\
@@ -54,11 +54,11 @@ When writing your own custom expressions, you must use the `starts_with()` and `
 
 ```txt
 # Valid function call
-ends_with(http.request.uri.path, ".html")
+ends_with(http.request.path, ".html")
 
 
 # Invalid use of ends_with function
-http.request.uri.path ends_with ".html"
+http.request.path ends_with ".html"
 ```
 
 ### Comparing string values
@@ -66,7 +66,7 @@ http.request.uri.path ends_with ".html"
 String comparison in rule expressions is case-sensitive. To account for possible variations of string capitalization in an expression, you can use the [`lower()`](functions.md#lower) function and compare the result with a lowercased string, like in the following example:
 
 ```txt
-lower(http.request.uri.path) contains "/wp-login.php"
+lower(http.request.path) contains "/wp-login.php"
 ```
 
 [Wildcard matching](#wildcard-matching) is only supported with the `wildcard` and `strict wildcard` operators, and [regular expression matching](#regular-expression-matching) is only supported with the `matches` operator.

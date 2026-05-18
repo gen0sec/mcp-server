@@ -10,7 +10,7 @@ import os
 import pytest
 import requests
 
-from waf_rule_mpc.tools import (
+from waf_rule_mcp.tools import (
     RulesValidator,
     RULE_TYPE_WAF,
     RULE_TYPE_SMART_FIREWALL,
@@ -89,3 +89,20 @@ def test_test_expression_uses_mock_data(validator):
     )
     assert out["valid"] is True, out
     assert "matched" in out
+
+
+def test_get_fields_waf_is_http_scheme(validator):
+    out = validator.get_fields(RULE_TYPE_WAF)
+    assert out["success"] is True, out
+    fields = out["fields"]
+    assert "http.request.path" in fields
+    assert "http.request.uri.path" not in fields  # the bug we fixed
+
+
+def test_get_fields_smart_firewall_has_no_http(validator):
+    out = validator.get_fields(RULE_TYPE_SMART_FIREWALL)
+    assert out["success"] is True, out
+    fields = out["fields"]
+    assert any(k in fields for k in ("ip.src", "ip.dst")), fields
+    assert not any(k.startswith("http.") for k in fields), \
+        "smart_firewall scheme must expose no http.* fields"

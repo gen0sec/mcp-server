@@ -2,7 +2,7 @@
 dist/*
 .git/*
 .github/*
-server/waf_rule_mpc/__pycache__/
+server/waf_rule_mcp/__pycache__/
 server/repo/
 tests/__pycache__/*
 *.log
