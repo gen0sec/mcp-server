@@ -3,3 +3,4 @@ server/repo/
 server/lib/
 __pycache__/
 .venv
+.venv-py*/
