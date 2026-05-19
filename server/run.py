@@ -8,7 +8,6 @@ import site
 import subprocess
 import os
 from pathlib import Path
-from mcp.server.fastmcp import FastMCP
 
 # CRITICAL: Add user site-packages to sys.path FIRST, before any other imports
 # This ensures we can find packages installed with --user flag
@@ -35,24 +34,40 @@ def check_and_install_dependencies():
         requirements_file = project_root / "requirements.txt"
         pyproject_file = project_root / "pyproject.toml"
 
-        # Try to install from requirements.txt first
+        # Try to install from requirements.txt first. Show real errors —
+        # modern Python installs (PEP 668) often refuse `pip install --user`
+        # and we want the operator to see why.
+        pip_cmd = None
         if requirements_file.exists():
             print("Installing dependencies from requirements.txt...", file=sys.stderr)
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "--user", "--quiet",
-                "--no-warn-script-location",
-                "-r", str(requirements_file)
-            ], stderr=subprocess.DEVNULL)
+            pip_cmd = [
+                sys.executable, "-m", "pip", "install", "--user",
+                "--no-warn-script-location", "--break-system-packages",
+                "-r", str(requirements_file),
+            ]
         elif pyproject_file.exists():
             print("Installing dependencies from pyproject.toml...", file=sys.stderr)
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", "--user", "--quiet",
-                "--no-warn-script-location",
-                str(project_root)
-            ], stderr=subprocess.DEVNULL)
+            pip_cmd = [
+                sys.executable, "-m", "pip", "install", "--user",
+                "--no-warn-script-location", "--break-system-packages",
+                str(project_root),
+            ]
         else:
             print("Warning: No requirements.txt or pyproject.toml found", file=sys.stderr)
             return
+
+        try:
+            subprocess.check_call(pip_cmd)
+        except subprocess.CalledProcessError as e:
+            print(
+                f"pip install failed (exit {e.returncode}). "
+                "If the extension was built with 'make pack', dependencies should "
+                "already be vendored under server/lib — verify the .mcpb was built "
+                "that way. Otherwise install manually with:\n  "
+                + " ".join(pip_cmd),
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         # Force reload of site-packages after installation
         import importlib

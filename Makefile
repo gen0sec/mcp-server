@@ -1,4 +1,4 @@
-.PHONY: release help upgrade-nuclei
+.PHONY: release help upgrade-nuclei vendor pack clean-vendor
 
 help:
 	@echo "Available targets:"
@@ -7,7 +7,34 @@ help:
 	@echo "  upgrade-nuclei [COMMIT=1]  - Upgrade nuclei-templates to latest version from GitHub"
 	@echo "                              Updates config.yaml and manifest.json"
 	@echo "                              Set COMMIT=1 to automatically commit changes"
+	@echo "  vendor                     - Vendor Python dependencies into server/lib for mcpb packaging"
+	@echo "  pack                       - Vendor deps and run 'mcpb pack' to build the .mcpb extension"
+	@echo "  clean-vendor               - Remove vendored server/lib directory"
 	@echo "  help                       - Show this help message"
+
+# ---------------------------------------------------------------------------
+# mcpb packaging: vendor deps into server/lib so the installed extension does
+# not need to pip-install at runtime (which is blocked by PEP 668 on most
+# modern Python installs).
+# ---------------------------------------------------------------------------
+PYTHON ?= /opt/homebrew/bin/python3
+vendor:
+	@echo "Vendoring dependencies into server/lib using $(PYTHON) ..."
+	@$(PYTHON) -c "import sys; print('  python:', sys.executable, sys.version)"
+	@rm -rf server/lib
+	@$(PYTHON) -m pip install \
+		--target server/lib \
+		--no-compile \
+		--quiet \
+		--no-warn-script-location \
+		-r requirements.txt
+	@echo "Vendored to server/lib"
+
+pack: vendor
+	mcpb pack
+
+clean-vendor:
+	rm -rf server/lib
 
 release:
 	@if [ -z "$(VERSION)" ]; then \

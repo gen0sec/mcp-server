@@ -1,4 +1,5 @@
 *.mcpb
 server/repo/
+server/lib/
 __pycache__/
 .venv
