@@ -1,133 +1,114 @@
 #!/usr/bin/env python3
 """
-Wrapper script to ensure dependencies are installed before running the server.
-This is needed when the server is packaged with mcpb pack.
+Launcher for the Gen0Sec WAF Rule Generation MCP server.
+
+Resolution order for dependencies:
+
+1. Bundled `server/lib` (preferred). `make pack` vendors deps here and the
+   manifest sets PYTHONPATH=${__dirname}/server/lib, so imports just work.
+2. Per-interpreter venv at `<extension_dir>/.venv-pyX.Y`. Only created if (1)
+   fails — e.g. user configured a Python whose ABI doesn't match the
+   bundled wheels, or the bundle is absent (running unpacked from source).
+
+The host Python is never modified. We do not use `--user`, `--break-
+system-packages`, or any global install.
 """
-import sys
-import site
-import subprocess
+from __future__ import annotations
+
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
-# CRITICAL: Add user site-packages to sys.path FIRST, before any other imports
-# This ensures we can find packages installed with --user flag
-user_site = site.getusersitepackages()
-if user_site and user_site not in sys.path:
-    sys.path.insert(0, user_site)
-# Also add site.USER_SITE if different
-try:
-    if hasattr(site, 'USER_SITE') and site.USER_SITE and site.USER_SITE not in sys.path:
-        sys.path.insert(0, site.USER_SITE)
-except:
-    pass
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 
-def check_and_install_dependencies():
-    """Check if dependencies are installed, install if needed."""
+
+def _venv_python(venv_dir: Path) -> Path:
+    if sys.platform == "win32":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def _bundled_deps_importable() -> bool:
     try:
-        import mcp
-        # Dependencies are already installed
-        return
+        import mcp  # noqa: F401
+        return True
     except ImportError:
-        # Dependencies not installed, need to install them
-        script_dir = Path(__file__).parent
-        project_root = script_dir.parent
-        requirements_file = project_root / "requirements.txt"
-        pyproject_file = project_root / "pyproject.toml"
+        return False
 
-        # Try to install from requirements.txt first. Show real errors —
-        # modern Python installs (PEP 668) often refuse `pip install --user`
-        # and we want the operator to see why.
-        pip_cmd = None
-        if requirements_file.exists():
-            print("Installing dependencies from requirements.txt...", file=sys.stderr)
-            pip_cmd = [
-                sys.executable, "-m", "pip", "install", "--user",
-                "--no-warn-script-location", "--break-system-packages",
-                "-r", str(requirements_file),
-            ]
-        elif pyproject_file.exists():
-            print("Installing dependencies from pyproject.toml...", file=sys.stderr)
-            pip_cmd = [
-                sys.executable, "-m", "pip", "install", "--user",
-                "--no-warn-script-location", "--break-system-packages",
-                str(project_root),
-            ]
-        else:
-            print("Warning: No requirements.txt or pyproject.toml found", file=sys.stderr)
-            return
 
+def _build_venv(venv_dir: Path) -> Path:
+    """Create a venv with the current interpreter and install requirements."""
+    py_tag = f"{sys.version_info.major}.{sys.version_info.minor}"
+    print(
+        f"[gen0sec-mcp] Bundled deps unavailable for Python {py_tag}; "
+        f"creating isolated venv at {venv_dir} (one-time setup)...",
+        file=sys.stderr,
+    )
+    if venv_dir.exists():
+        shutil.rmtree(venv_dir, ignore_errors=True)
+
+    import venv as _venv
+    _venv.EnvBuilder(with_pip=True, symlinks=(sys.platform != "win32")).create(str(venv_dir))
+
+    py = _venv_python(venv_dir)
+    if not REQUIREMENTS.exists():
+        print(f"[gen0sec-mcp] requirements.txt not found at {REQUIREMENTS}", file=sys.stderr)
+        sys.exit(1)
+
+    subprocess.check_call(
+        [str(py), "-m", "pip", "install", "--no-warn-script-location",
+         "--disable-pip-version-check", "-r", str(REQUIREMENTS)],
+    )
+    return py
+
+
+def _ensure_runtime() -> None:
+    """Guarantee `import mcp` will succeed, re-execing into a venv if needed."""
+    if _bundled_deps_importable():
+        return
+
+    py_tag = f"{sys.version_info.major}.{sys.version_info.minor}"
+    venv_dir = PROJECT_ROOT / f".venv-py{py_tag}"
+    venv_py = _venv_python(venv_dir)
+
+    if not venv_py.exists():
         try:
-            subprocess.check_call(pip_cmd)
-        except subprocess.CalledProcessError as e:
+            venv_py = _build_venv(venv_dir)
+        except (subprocess.CalledProcessError, OSError) as e:
             print(
-                f"pip install failed (exit {e.returncode}). "
-                "If the extension was built with 'make pack', dependencies should "
-                "already be vendored under server/lib — verify the .mcpb was built "
-                "that way. Otherwise install manually with:\n  "
-                + " ".join(pip_cmd),
+                f"[gen0sec-mcp] Failed to create dependency venv: {e}\n"
+                f"  Tried: {venv_dir}\n"
+                "  Rebuild the extension with 'make pack' so deps are bundled, "
+                "or install requirements.txt into a Python that the extension "
+                "is configured to use.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # Force reload of site-packages after installation
-        import importlib
-        importlib.reload(site)
+    # Re-exec into the venv interpreter so imports come from there.
+    if Path(sys.executable).resolve() != venv_py.resolve():
+        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
 
-        # Re-add user site-packages after installation (may have changed)
-        user_site = site.getusersitepackages()
-        if user_site:
-            # Add both the site-packages directory and its parent
-            if user_site not in sys.path:
-                sys.path.insert(0, user_site)
-            # Also add the parent directory in case packages are installed there
-            user_site_parent = str(Path(user_site).parent)
-            if user_site_parent not in sys.path:
-                sys.path.insert(0, user_site_parent)
 
-        # Verify installation worked - try importing with a fresh import
-        import importlib.util
-        try:
-            # Force a fresh import
-            if 'mcp' in sys.modules:
-                del sys.modules['mcp']
-            import mcp
-        except ImportError:
-            # Try one more time after a brief moment
-            import time
-            time.sleep(0.1)
-            try:
-                import mcp
-            except ImportError:
-                print("Error: Failed to install dependencies. Please install manually:", file=sys.stderr)
-                if requirements_file.exists():
-                    print(f"  {sys.executable} -m pip install --user -r {requirements_file}", file=sys.stderr)
-                sys.exit(1)
+def _run_main() -> None:
+    os.chdir(SCRIPT_DIR)
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
 
-if __name__ == "__main__":
-    # Check and install dependencies if needed
-    check_and_install_dependencies()
-
-    # Ensure user site-packages is definitely in path
-    user_site = site.getusersitepackages()
-    if user_site and user_site not in sys.path:
-        sys.path.insert(0, user_site)
-
-    # Change to server directory
-    script_dir = Path(__file__).parent
-    os.chdir(script_dir)
-    main_script = script_dir / "main.py"
-
-    # Add server directory to path so imports work
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-
-    # Use runpy to execute main.py as __main__
-    # This properly handles __name__ == "__main__" and preserves sys.argv
+    main_script = SCRIPT_DIR / "main.py"
     import runpy
-    # Preserve original argv but set script name
     original_argv = sys.argv[:]
-    sys.argv = [str(main_script)] + sys.argv[1:]
+    sys.argv = [str(main_script), *sys.argv[1:]]
     try:
         runpy.run_path(str(main_script), run_name="__main__")
     finally:
         sys.argv = original_argv
+
+
+if __name__ == "__main__":
+    _ensure_runtime()
+    _run_main()
