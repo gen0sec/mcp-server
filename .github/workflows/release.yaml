@@ -35,7 +35,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.GEN0SEC_MCP_SERVER_REGISTRY_IMAGE }}
           tags: |
@@ -88,7 +88,7 @@ jobs:
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build
         id: bake
@@ -143,7 +143,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
@@ -201,7 +201,7 @@ jobs:
            rm -rf gen0sec-mcp-server-bake-meta
 
       - name: Release
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@v3.0.0
         with:
           draft: true
           discussion_category_name: Releases
