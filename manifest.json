@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "Gen0Sec WAF Rule Generation MCP Server",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Generate WAF rules and provide context information about WAF rules. Supports multiple CVE data sources including Nuclei Open Source and Nuclei Paid (ProjectDiscovery API).",
   "author": {
     "name": "Gen0Sec",
