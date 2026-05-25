@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "8640f47a3bd0a38d851657e04919f3714bf162b3a227935d9cede04dbb358155"
+            "sha256": "b8370f1ffdb93150c8712dd0b2b8b11749b54b01ffd1e8f15cf89f8e662a3f48"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -264,12 +264,12 @@
         },
         "click": {
             "hashes": [
-                "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a",
-                "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6"
+                "sha256:40c50b7c6c6adac2823d411041ec84f3f103f1b280d5e9ce0d7f998995832f81",
+                "sha256:638f1338fe1235c8f4e008e4a8a254fb5c5fbdcbb40ece3c9142ebb78e792973"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==8.3.1"
+            "version": "==8.4.0"
         },
         "colorama": {
             "hashes": [
@@ -373,21 +373,21 @@
         },
         "idna": {
             "hashes": [
-                "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea",
-                "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902"
+                "sha256:048adeaf8c2d788c40fee287673ccaa74c24ffd8dcf09ffa555a2fbb59f10ac8",
+                "sha256:ca962446ea538f7092a95e057da437618e886f4d349216d2b1e294abfdb65fdc"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==3.11"
+            "version": "==3.15"
         },
         "jsonschema": {
             "hashes": [
-                "sha256:3fba0169e345c7175110351d456342c364814cfcf3b964ba4587f22915230a63",
-                "sha256:e4a9655ce0da0c0b67a085847e00a3a51449e1157f4f75e9fb5aa545e122eb85"
+                "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326",
+                "sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==4.25.1"
+            "markers": "python_version >= '3.10'",
+            "version": "==4.26.0"
         },
         "jsonschema-specifications": {
             "hashes": [
@@ -611,12 +611,12 @@
         },
         "python-multipart": {
             "hashes": [
-                "sha256:6fccfad17a27334bd0193681b369f476eda3409f17381a2d65aa7df3f7275645",
-                "sha256:9870a6a8c5a20a5bf4f07c017bd1489006ff8836cff097b6933355ee2b49b602"
+                "sha256:2ddcc971cef266225f54f552d8fa10bcfbb1f14446caec199060daac59ff2d69",
+                "sha256:643e93849196645e2dbdd81a0f8829a23123ad7f797a84a364c6fb3563f18904"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==0.0.27"
+            "version": "==0.0.29"
         },
         "pywin32": {
             "hashes": [
@@ -735,12 +735,12 @@
         },
         "requests": {
             "hashes": [
-                "sha256:3324635456fa185245e24865e810cecec7b4caf933d7eb133dcde67d48cee69b",
-                "sha256:c7ebc5e8b0f21837386ad0e1c8fe8b829fa5f544d8df3b2253bff14ef29d7652"
+                "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+                "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==2.33.0"
+            "version": "==2.34.2"
         },
         "rich": {
             "hashes": [
@@ -947,12 +947,11 @@
         },
         "uvicorn": {
             "hashes": [
-                "sha256:839676675e87e73694518b5574fd0f24c9d97b46bea16df7b8c05ea1a51071ea",
-                "sha256:c6c8f55bc8bf13eb6fa9ff87ad62308bbbc33d0b67f84293151efe87e0d5f2ee"
+                "sha256:2c5715bc12d1892d84752049f400cd1c3cb018514967fdfeb97640443a6a9432",
+                "sha256:7c9a0ea1a9414106bbab7324609c162d8fa0cdcdcb703060987269d77c7bb533"
             ],
             "markers": "sys_platform != 'emscripten'",
-            "version": "==0.40.0"
+            "version": "==0.47.0"
         }
-    },
-    "develop": {}
+    }
 }
