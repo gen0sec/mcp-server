@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b8370f1ffdb93150c8712dd0b2b8b11749b54b01ffd1e8f15cf89f8e662a3f48"
+            "sha256": "e1265b312be7a5c2b00e387a97ea14404e487986cee99ffa3939257a9307aea2"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -893,12 +893,12 @@
         },
         "sse-starlette": {
             "hashes": [
-                "sha256:bb38f71ae74cfd86b529907a9fda5632195dfa6ae120f214ea4c890c7ee9d436",
-                "sha256:bffa531420c1793ab224f63648c059bcadc412bf9fdb1301ac8de1cf9a67b7fb"
+                "sha256:07e0fa0460138baf25cdd5fb28683472c3995dc1642225191b3832d62526bcb0",
+                "sha256:3f4dd50d8aed2771a091f3a83000323fc3844541c16b4fe585ae2420cc6df973"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==3.1.1"
+            "markers": "python_version >= '3.10'",
+            "version": "==3.4.4"
         },
         "starlette": {
             "hashes": [
@@ -953,5 +953,6 @@
             "markers": "sys_platform != 'emscripten'",
             "version": "==0.47.0"
         }
-    }
+    },
+    "develop": {}
 }
