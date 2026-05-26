@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b8370f1ffdb93150c8712dd0b2b8b11749b54b01ffd1e8f15cf89f8e662a3f48"
+            "sha256": "452ec2868752562a364d691a22c586b04b3c806c1e07a509c09d6808500bf7cc"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -744,12 +744,12 @@
         },
         "rich": {
             "hashes": [
-                "sha256:73ff50c7c0c1c77c8243079283f4edb376f0f6442433aecb8ce7e6d0b92d1fe4",
-                "sha256:76bc51fe2e57d2b1be1f96c524b890b816e334ab4c1e45888799bfaab0021edd"
+                "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+                "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36"
             ],
             "index": "pypi",
-            "markers": "python_full_version >= '3.8.0'",
-            "version": "==14.2.0"
+            "markers": "python_full_version >= '3.9.0'",
+            "version": "==15.0.0"
         },
         "rpds-py": {
             "hashes": [
@@ -953,5 +953,6 @@
             "markers": "sys_platform != 'emscripten'",
             "version": "==0.47.0"
         }
-    }
+    },
+    "develop": {}
 }
