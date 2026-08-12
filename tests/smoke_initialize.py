@@ -41,7 +41,12 @@ def _drain(stream, sink: list) -> None:
         sink.append(line)
 
 
-def run_smoke(python: str, lib: str | None, timeout: float) -> int:
+def _venv_dirs() -> set:
+    return {p.name for p in REPO_ROOT.glob(".venv-*")}
+
+
+def run_smoke(python: str, lib: str | None, timeout: float, expect: str = "any") -> int:
+    venvs_before = _venv_dirs()
     env = dict(os.environ)
     # Mirror the manifest: PYTHONPATH pinned at server/lib.
     if lib:
@@ -121,7 +126,18 @@ def run_smoke(python: str, lib: str | None, timeout: float) -> int:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
-    print(f"[smoke] OK: '{EXPECTED_SERVER_NAME}' initialized under {python} "
+
+    # A new .venv-* appearing means the fallback built one; its absence means a
+    # bundled dir served the import. Lets CI assert the intended path was taken
+    # (e.g. an offline bundle must NOT need a venv).
+    built_venv = bool(_venv_dirs() - venvs_before)
+    if expect == "bundled" and built_venv:
+        return fail("expected the bundled deps to be used, but a fallback venv was built")
+    if expect == "venv" and not built_venv:
+        return fail("expected the fallback venv path, but no venv was built (bundled deps served it)")
+
+    how = "fallback venv" if built_venv else "bundled deps"
+    print(f"[smoke] OK: '{EXPECTED_SERVER_NAME}' initialized under {python} via {how} "
           f"(PYTHONPATH={'<server/lib>' if lib else '<unset>'})")
     return 0
 
@@ -135,8 +151,10 @@ def main() -> int:
                          "Pass '' to leave PYTHONPATH unset.")
     ap.add_argument("--timeout", type=float, default=420.0,
                     help="Seconds to wait for initialize (allows a one-time venv build).")
+    ap.add_argument("--expect", choices=["any", "bundled", "venv"], default="any",
+                    help="Assert which dependency path served the import.")
     args = ap.parse_args()
-    return run_smoke(args.python, args.lib or None, args.timeout)
+    return run_smoke(args.python, args.lib or None, args.timeout, args.expect)
 
 
 if __name__ == "__main__":

@@ -37,11 +37,41 @@ An **MCP server** that lets an LLM author, validate, and test [Wirefilter](https
 ### Claude Desktop (bundle)
 
 ```bash
-# Prerequisites: uv, and mcpb (npm install -g @anthropic-ai/mcpb)
-mcpb pack          # produces gen0sec-mcp-server.mcpb
+# Prerequisites: mcpb (npm install -g @anthropic-ai/mcpb)
+make pack          # produces the thin, portable gen0sec-mcp-server.mcpb
 ```
 
 Open the generated `gen0sec-mcp-server.mcpb` file — Claude Desktop installs it in about a minute, after which the tools, resources, and prompts are available.
+
+#### Which bundle: thin vs offline
+
+The GitHub release ships two `.mcpb` files:
+
+- **`gen0sec-mcp-server.mcpb` (thin, default)** — carries no native wheels, so it
+  runs on any supported interpreter. On first launch it builds a small private
+  virtualenv from `requirements.txt`, which needs **one-time network access** to
+  PyPI. Nothing global is touched, and the host Python is never modified.
+- **`gen0sec-mcp-server-offline.mcpb` (air-gapped)** — carries prebuilt wheels for
+  several interpreter targets under `server/lib/<abi-tag>/` (CPython 3.12–3.13 on
+  macOS arm64, Linux x86_64/aarch64, Windows x86_64). On a covered target
+  it starts with **no network access**. On an uncovered interpreter it degrades to
+  the thin bundle's first-run venv.
+
+The extension picks the right path automatically; the only difference is whether a
+one-time network install can happen at first launch. Set **Path to Python
+executable** in the extension config to a Python **≥ 3.12** if the default `python3`
+isn't suitable.
+
+Building locally:
+
+```bash
+make pack          # thin bundle (release default)
+make vendor-multi  # add this host's ABI dir to server/lib/<abi-tag>/
+make pack-offline  # offline bundle from whatever ABI dirs are present
+```
+
+The full cross-platform offline bundle is assembled in CI, where each target is
+vendored natively (see `.github/workflows/offline-bundle.yaml`).
 
 ### Cursor IDE — local (stdio)
 

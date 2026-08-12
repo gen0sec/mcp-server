@@ -4,18 +4,21 @@ Launcher for the Gen0Sec WAF Rule Generation MCP server.
 
 Resolution order for dependencies:
 
-1. Bundled `server/lib`, IF it imports under this interpreter. The released
-   `.mcpb` is deliberately "thin" (no vendored wheels) because a single bundle
-   cannot carry native extensions for every Python ABI + OS + arch. A populated
-   `server/lib` only exists for a single-platform local/offline build
-   (`make vendor`) or the Docker image — and it is used only when it actually
-   imports on the host.
+1. Bundled deps, IF they import under this interpreter. Two layouts are
+   supported:
+     - Multi-ABI (offline bundle): `server/lib/<abi-tag>/`, one dir per
+       interpreter target (e.g. `server/lib/cpython-312-darwin-arm64/`). The
+       host selects the dir matching `_abi_tag()`.
+     - Flat (single-platform local `make vendor`, or the Docker image):
+       packages live directly under `server/lib`.
+   The thin released `.mcpb` carries neither and relies on (2).
 2. Per-interpreter venv at `<extension_dir>/.venv-<pyX.Y>-<platform>`. Built on
-   first run when (1) is absent or ABI-incompatible. This is the normal path
-   for the released bundle.
+   first run when (1) is absent or ABI-incompatible.
 
-The host Python is never modified. We do not use `--user`, `--break-
-system-packages`, or any global install.
+A single bundle cannot carry native extensions for every Python ABI + OS +
+arch, so a bundled dir is used only when it actually imports on the host;
+otherwise we fall back to (2). The host Python is never modified. We do not use
+`--user`, `--break-system-packages`, or any global install.
 """
 from __future__ import annotations
 
@@ -55,6 +58,69 @@ def _env_tag() -> str:
     return f"py{sys.version_info.major}.{sys.version_info.minor}-{plat}"
 
 
+def _abi_tag() -> str:
+    """Self-computable key for THIS interpreter's binary-wheel compatibility.
+
+    The SAME logic runs at build time (to name each ``server/lib/<tag>/`` in the
+    offline bundle) and here (to pick the matching one), so one bundle can carry
+    native wheels for several interpreters and each host selects its own — no
+    third-party package (``packaging``) required, which we couldn't import before
+    deps exist anyway. Example: ``cpython-312-darwin-arm64``.
+    """
+    import platform
+
+    impl = sys.implementation.cache_tag or (
+        f"{sys.implementation.name}-{sys.version_info.major}{sys.version_info.minor}"
+    )
+    machine = platform.machine() or "unknown"
+    return f"{impl}-{sys.platform}-{machine}".lower()
+
+
+def _bundled_dir() -> "Path | None":
+    """The vendored-deps directory for this interpreter, if the bundle has one.
+
+    Prefers the multi-ABI layout (``server/lib/<abi-tag>/``); falls back to the
+    flat layout (packages directly under ``server/lib``). Presence of the ``mcp``
+    package is the sentinel that a directory is actually populated.
+    """
+    tagged = BUNDLED_LIB / _abi_tag()
+    if (tagged / "mcp").is_dir():
+        return tagged
+    if (BUNDLED_LIB / "mcp").is_dir():
+        return BUNDLED_LIB
+    return None
+
+
+def _prepend_to_path(directory: Path) -> None:
+    """Put ``directory`` (and paths its .pth files add) first on sys.path.
+
+    Uses ``site.addsitedir`` rather than a bare ``sys.path.insert`` so that .pth
+    files in the vendored dir are PROCESSED. This matters for a real pip-target
+    install: pywin32 ships a ``.pth`` that adds ``win32/lib`` (where
+    ``pywintypes`` lives) and registers its DLL directory. Skipping .pth
+    processing leaves ``import pywintypes`` — and therefore ``import mcp`` on
+    Windows — broken. Entries added by addsitedir are hoisted to the front so
+    the bundled deps take precedence over anything already on the host.
+    """
+    import site
+
+    entry = str(directory)
+    before = set(sys.path)
+    site.addsitedir(entry)  # appends the dir + its .pth expansions; runs .pth imports
+    added = [p for p in sys.path if p not in before]
+    if added:
+        added_set = set(added)
+        sys.path[:] = [p for p in sys.path if p not in added_set]
+        sys.path[:0] = added
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
+
+    # Keep PYTHONPATH in sync for any child process / re-exec.
+    current = os.environ.get("PYTHONPATH", "")
+    parts = [entry] + ([current] if current else [])
+    os.environ["PYTHONPATH"] = os.pathsep.join(parts)
+
+
 def _purge_bundled_from_path() -> None:
     """Remove the vendored ``server/lib`` from ``sys.path`` and ``PYTHONPATH``.
 
@@ -62,13 +128,14 @@ def _purge_bundled_from_path() -> None:
     + arch. When the host Python doesn't match, they fail to import. Because the
     manifest pins ``PYTHONPATH=${__dirname}/server/lib`` ahead of everything,
     those broken wheels would also SHADOW the correctly-built packages in our
-    fallback venv — defeating the fallback. Drop server/lib so the venv wins.
+    fallback venv — defeating the fallback. Drop server/lib (and any
+    ``server/lib/<abi-tag>`` we added) so the venv wins.
     """
-    target = BUNDLED_LIB.resolve()
+    root = BUNDLED_LIB.resolve()
 
     def _is_bundled(entry: str) -> bool:
         try:
-            return bool(entry) and Path(entry).resolve() == target
+            return bool(entry) and Path(entry).resolve().is_relative_to(root)
         except OSError:
             return False
 
@@ -134,12 +201,23 @@ def _build_venv(venv_dir: Path) -> Path:
 
 def _ensure_runtime() -> None:
     """Guarantee `import mcp` will succeed, re-execing into a venv if needed."""
+    # Once we've re-exec'd into the fallback venv, that venv is authoritative:
+    # do NOT re-discover a bundled dir here, or an incompatible server/lib would
+    # be prepended again and shadow the venv (import fails → false "venv broken").
+    already_bootstrapped = os.environ.get(_BOOTSTRAP_FLAG) == "1"
+    if not already_bootstrapped:
+        # Multi-ABI bundle: the manifest's PYTHONPATH=server/lib holds no
+        # packages directly, so add the subdir matching this interpreter.
+        bundled = _bundled_dir()
+        if bundled is not None:
+            _prepend_to_path(bundled)
+
     if _bundled_deps_importable():
         return
 
     # We re-exec into a fallback venv below. If we've already done so and deps
     # STILL don't import, the venv itself is broken — stop, don't loop.
-    if os.environ.get(_BOOTSTRAP_FLAG) == "1":
+    if already_bootstrapped:
         print(
             "[gen0sec-mcp] Dependencies still unavailable after venv bootstrap. "
             "The fallback venv did not provide 'mcp'.\n"
@@ -151,8 +229,29 @@ def _ensure_runtime() -> None:
         sys.exit(1)
 
     # A bundle is present but doesn't match this interpreter (ABI/OS/arch), or is
-    # absent. Stop the broken/absent server/lib from shadowing the fallback venv
-    # — both now and across the re-exec — then build/use the venv.
+    # absent. Emit a one-line diagnostic so an unexpected fallback (e.g. a tag
+    # that doesn't match the vendored dir name) is debuggable from the logs.
+    if BUNDLED_LIB.is_dir():
+        try:
+            present = sorted(p.name for p in BUNDLED_LIB.iterdir() if p.is_dir())
+        except OSError:
+            present = []
+        tagged = BUNDLED_LIB / _abi_tag()
+        import importlib
+        try:
+            importlib.import_module("mcp")
+            why = "import mcp OK"
+        except BaseException as e:  # noqa: BLE001 — diagnostic only
+            why = f"import mcp -> {type(e).__name__}: {e}"
+        print(
+            f"[gen0sec-mcp] No bundled deps for abi tag '{_abi_tag()}'. "
+            f"server/lib dirs: {present}; tagged.is_dir={tagged.is_dir()}; "
+            f"mcp.is_dir={(tagged / 'mcp').is_dir()}; {why}",
+            file=sys.stderr,
+        )
+
+    # Stop the broken/absent server/lib from shadowing the fallback venv — both
+    # now and across the re-exec — then build/use the venv.
     _purge_bundled_from_path()
 
     venv_dir = PROJECT_ROOT / f".venv-{_env_tag()}"
@@ -194,5 +293,13 @@ def _run_main() -> None:
 
 
 if __name__ == "__main__":
+    # Build-time hook: CI names each offline-bundle dir with this value, so the
+    # naming can never drift from the runtime selection logic above.
+    if "--print-abi-tag" in sys.argv[1:]:
+        # No trailing newline: on Windows a printed "\n" becomes "\r\n", and a
+        # shell $(...) keeps the stray "\r", corrupting the dir name CI derives.
+        sys.stdout.write(_abi_tag())
+        sys.stdout.flush()
+        raise SystemExit(0)
     _ensure_runtime()
     _run_main()

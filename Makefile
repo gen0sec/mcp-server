@@ -1,4 +1,4 @@
-.PHONY: release help upgrade-nuclei vendor pack clean-vendor
+.PHONY: release help upgrade-nuclei vendor vendor-pack vendor-multi pack pack-offline clean-vendor
 
 help:
 	@echo "Available targets:"
@@ -8,8 +8,11 @@ help:
 	@echo "                              Updates config.yaml and manifest.json"
 	@echo "                              Set COMMIT=1 to automatically commit changes"
 	@echo "  pack                       - Build the RELEASED thin .mcpb (no native wheels; portable). CI-identical."
-	@echo "  vendor                     - Vendor Python deps into server/lib (SINGLE platform only)"
-	@echo "  vendor-pack                - Single-platform OFFLINE .mcpb (server/lib native wheels; NOT for release)"
+	@echo "  vendor                     - Vendor Python deps into server/lib (SINGLE platform, flat layout)"
+	@echo "  vendor-pack                - Single-platform OFFLINE .mcpb (flat server/lib; NOT for release)"
+	@echo "  vendor-multi               - Vendor into server/lib/<abi-tag>/ for THIS interpreter (multi-ABI layout)"
+	@echo "  pack-offline               - Pack whatever multi-ABI dirs exist in server/lib into an offline .mcpb"
+	@echo "                              (the full cross-platform offline bundle is assembled in CI)"
 	@echo "  clean-vendor               - Remove vendored server/lib directory"
 	@echo "  help                       - Show this help message"
 
@@ -45,6 +48,25 @@ vendor:
 	@echo "Vendored to server/lib (only runs on this python minor + OS + arch)"
 
 vendor-pack: vendor
+	mcpb pack
+
+# Multi-ABI layout: server/lib/<abi-tag>/ per interpreter target. run.py picks
+# the dir matching its own _abi_tag(). This local target only populates THIS
+# host's tag (useful for testing the layout); the full cross-platform offline
+# bundle is assembled from per-runner artifacts in CI (offline-bundle.yaml).
+vendor-multi:
+	@TAG=$$($(PYTHON) server/run.py --print-abi-tag); \
+	echo "Vendoring into server/lib/$$TAG using $(PYTHON) ..."; \
+	rm -rf "server/lib/$$TAG"; \
+	$(PYTHON) -m pip install \
+		--target "server/lib/$$TAG" \
+		--no-compile \
+		--quiet \
+		--no-warn-script-location \
+		-r requirements.txt; \
+	echo "Vendored to server/lib/$$TAG"
+
+pack-offline:
 	mcpb pack
 
 clean-vendor:

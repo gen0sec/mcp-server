@@ -1,0 +1,118 @@
+name: offline bundle
+
+# Builds the OFFLINE (air-gapped) .mcpb: a multi-ABI bundle carrying native
+# wheels for several interpreter targets under server/lib/<abi-tag>/, so no
+# first-run network install is needed on a covered target. run.py selects the
+# matching dir; uncovered interpreters still fall back to a first-run venv.
+#
+# Wheels are vendored NATIVELY on each target runner (correct environment
+# markers + native binaries — cross-downloading with pip --platform gets
+# sys_platform markers wrong), then assembled into one bundle.
+
+on:
+  # No base-branch filter (must cover stacked PRs too). Path-scoped because the
+  # native multi-runner matrix is heavy — only run it when packaging inputs change.
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'requirements.txt'
+      - 'manifest.json'
+      - 'Makefile'
+      - 'tests/smoke_initialize.py'
+      - '.github/workflows/offline-bundle.yaml'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed only to attach the bundle to a tag's release
+
+jobs:
+  vendor:
+    name: vendor ${{ matrix.os }} / py${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26, windows-latest]
+        py: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Compute ABI tag
+        id: tag
+        shell: bash
+        run: echo "tag=$(python server/run.py --print-abi-tag | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+      - name: Vendor native wheels for this interpreter
+        shell: bash
+        run: |
+          python -m pip install --target "server/lib/${{ steps.tag.outputs.tag }}" \
+            --no-compile --no-warn-script-location --disable-pip-version-check \
+            -r requirements.txt
+      - name: Smoke — must initialize from the bundled dir (no venv)
+        shell: bash
+        run: python tests/smoke_initialize.py --timeout 120 --expect bundled
+      - name: Upload tag dir
+        uses: actions/upload-artifact@v7
+        with:
+          name: lib-${{ steps.tag.outputs.tag }}
+          path: server/lib/${{ steps.tag.outputs.tag }}
+          if-no-files-found: error
+          retention-days: 1
+
+  assemble:
+    name: assemble offline .mcpb
+    needs: vendor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download all vendored tag dirs
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/libs
+          pattern: lib-*
+      - name: Assemble server/lib/<abi-tag>/
+        shell: bash
+        run: |
+          rm -rf server/lib && mkdir -p server/lib
+          for d in "${{ runner.temp }}"/libs/lib-*; do
+            tag="$(basename "$d")"; tag="${tag#lib-}"
+            mv "$d" "server/lib/$tag"
+          done
+          echo "Bundled ABIs:"; ls -1 server/lib
+      - name: Sanity — matching dir imports on this runner (linux x86_64)
+        shell: bash
+        run: python tests/smoke_initialize.py --timeout 120 --expect bundled
+      - name: Pack offline bundle
+        shell: bash
+        run: |
+          npm install -g @anthropic-ai/mcpb
+          # Pack WITH the multi-ABI server/lib (do not clean-vendor).
+          make pack-offline
+          MCPB="$(find . -maxdepth 1 -name '*.mcpb' | head -1)"
+          mv "$MCPB" gen0sec-mcp-server-offline.mcpb
+          ls -lh gen0sec-mcp-server-offline.mcpb
+      - name: Upload offline bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen0sec-mcp-server-offline
+          path: gen0sec-mcp-server-offline.mcpb
+          if-no-files-found: error
+      - name: Attach offline bundle to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3.0.2
+        with:
+          # Match release.yaml: add the asset to the same draft release for the
+          # tag without flipping its draft state.
+          draft: true
+          files: gen0sec-mcp-server-offline.mcpb
