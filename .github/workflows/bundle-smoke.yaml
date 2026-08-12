@@ -95,7 +95,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install test deps
-        run: python -m pip install --disable-pip-version-check pytest
+      # test_rules_validator_unit imports waf_rule_mcp.tools, which needs the
+      # runtime deps (pyyaml/requests/mcp); without them pytest fails to collect.
+      - name: Install deps
+        run: python -m pip install --disable-pip-version-check -r requirements.txt pytest
       - name: Run bootstrap + unit tests
         run: python -m pytest -q tests/test_run_bootstrap.py tests/test_rules_validator_unit.py
