@@ -58,3 +58,39 @@ def test_purge_is_a_noop_when_nothing_bundled(monkeypatch):
 
     assert sys.path == before
     assert "PYTHONPATH" not in os.environ
+
+
+def test_purge_also_removes_multiabi_subdir(monkeypatch):
+    # The multi-ABI layout puts packages in server/lib/<abi-tag>/; the purge must
+    # drop those subdir entries too, not just the flat server/lib root.
+    run = _load_run()
+    tagged = str(run.BUNDLED_LIB / "cpython-312-linux-x86_64")
+    other = "/usr/local/lib/python3.99/site-packages"
+
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([tagged, other]))
+    monkeypatch.setattr(sys, "path", list(sys.path) + [tagged, other])
+
+    run._purge_bundled_from_path()
+
+    assert tagged not in sys.path
+    assert other in sys.path
+    assert tagged not in os.environ["PYTHONPATH"].split(os.pathsep)
+
+
+def test_abi_tag_is_stable_and_self_describing():
+    run = _load_run()
+    tag = run._abi_tag()
+    assert tag == tag.lower()
+    assert sys.platform in tag
+    # Interpreter family + version, e.g. cpython-312-...
+    assert tag.startswith((sys.implementation.name, "cpython", "pypy"))
+    # Same interpreter must always compute the same key (build == runtime).
+    assert run._abi_tag() == tag
+
+
+def test_bundled_dir_none_when_unpopulated(monkeypatch, tmp_path):
+    run = _load_run()
+    # Point BUNDLED_LIB at an empty dir: neither a matching <tag>/mcp nor a flat
+    # mcp exists, so there is no usable bundled dir.
+    monkeypatch.setattr(run, "BUNDLED_LIB", tmp_path)
+    assert run._bundled_dir() is None

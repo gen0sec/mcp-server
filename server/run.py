@@ -4,18 +4,21 @@ Launcher for the Gen0Sec WAF Rule Generation MCP server.
 
 Resolution order for dependencies:
 
-1. Bundled `server/lib`, IF it imports under this interpreter. The released
-   `.mcpb` is deliberately "thin" (no vendored wheels) because a single bundle
-   cannot carry native extensions for every Python ABI + OS + arch. A populated
-   `server/lib` only exists for a single-platform local/offline build
-   (`make vendor`) or the Docker image — and it is used only when it actually
-   imports on the host.
+1. Bundled deps, IF they import under this interpreter. Two layouts are
+   supported:
+     - Multi-ABI (offline bundle): `server/lib/<abi-tag>/`, one dir per
+       interpreter target (e.g. `server/lib/cpython-312-darwin-arm64/`). The
+       host selects the dir matching `_abi_tag()`.
+     - Flat (single-platform local `make vendor`, or the Docker image):
+       packages live directly under `server/lib`.
+   The thin released `.mcpb` carries neither and relies on (2).
 2. Per-interpreter venv at `<extension_dir>/.venv-<pyX.Y>-<platform>`. Built on
-   first run when (1) is absent or ABI-incompatible. This is the normal path
-   for the released bundle.
+   first run when (1) is absent or ABI-incompatible.
 
-The host Python is never modified. We do not use `--user`, `--break-
-system-packages`, or any global install.
+A single bundle cannot carry native extensions for every Python ABI + OS +
+arch, so a bundled dir is used only when it actually imports on the host;
+otherwise we fall back to (2). The host Python is never modified. We do not use
+`--user`, `--break-system-packages`, or any global install.
 """
 from __future__ import annotations
 
@@ -55,6 +58,49 @@ def _env_tag() -> str:
     return f"py{sys.version_info.major}.{sys.version_info.minor}-{plat}"
 
 
+def _abi_tag() -> str:
+    """Self-computable key for THIS interpreter's binary-wheel compatibility.
+
+    The SAME logic runs at build time (to name each ``server/lib/<tag>/`` in the
+    offline bundle) and here (to pick the matching one), so one bundle can carry
+    native wheels for several interpreters and each host selects its own — no
+    third-party package (``packaging``) required, which we couldn't import before
+    deps exist anyway. Example: ``cpython-312-darwin-arm64``.
+    """
+    import platform
+
+    impl = sys.implementation.cache_tag or (
+        f"{sys.implementation.name}-{sys.version_info.major}{sys.version_info.minor}"
+    )
+    machine = platform.machine() or "unknown"
+    return f"{impl}-{sys.platform}-{machine}".lower()
+
+
+def _bundled_dir() -> "Path | None":
+    """The vendored-deps directory for this interpreter, if the bundle has one.
+
+    Prefers the multi-ABI layout (``server/lib/<abi-tag>/``); falls back to the
+    flat layout (packages directly under ``server/lib``). Presence of the ``mcp``
+    package is the sentinel that a directory is actually populated.
+    """
+    tagged = BUNDLED_LIB / _abi_tag()
+    if (tagged / "mcp").is_dir():
+        return tagged
+    if (BUNDLED_LIB / "mcp").is_dir():
+        return BUNDLED_LIB
+    return None
+
+
+def _prepend_to_path(directory: Path) -> None:
+    """Put ``directory`` first on sys.path and PYTHONPATH (for any subprocess)."""
+    entry = str(directory)
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
+    current = os.environ.get("PYTHONPATH", "")
+    parts = [entry] + ([current] if current else [])
+    os.environ["PYTHONPATH"] = os.pathsep.join(parts)
+
+
 def _purge_bundled_from_path() -> None:
     """Remove the vendored ``server/lib`` from ``sys.path`` and ``PYTHONPATH``.
 
@@ -62,13 +108,14 @@ def _purge_bundled_from_path() -> None:
     + arch. When the host Python doesn't match, they fail to import. Because the
     manifest pins ``PYTHONPATH=${__dirname}/server/lib`` ahead of everything,
     those broken wheels would also SHADOW the correctly-built packages in our
-    fallback venv — defeating the fallback. Drop server/lib so the venv wins.
+    fallback venv — defeating the fallback. Drop server/lib (and any
+    ``server/lib/<abi-tag>`` we added) so the venv wins.
     """
-    target = BUNDLED_LIB.resolve()
+    root = BUNDLED_LIB.resolve()
 
     def _is_bundled(entry: str) -> bool:
         try:
-            return bool(entry) and Path(entry).resolve() == target
+            return bool(entry) and Path(entry).resolve().is_relative_to(root)
         except OSError:
             return False
 
@@ -134,6 +181,12 @@ def _build_venv(venv_dir: Path) -> Path:
 
 def _ensure_runtime() -> None:
     """Guarantee `import mcp` will succeed, re-execing into a venv if needed."""
+    # Multi-ABI bundle: the manifest's PYTHONPATH=server/lib holds no packages
+    # directly, so add the subdir matching this interpreter before checking.
+    bundled = _bundled_dir()
+    if bundled is not None:
+        _prepend_to_path(bundled)
+
     if _bundled_deps_importable():
         return
 
@@ -194,5 +247,10 @@ def _run_main() -> None:
 
 
 if __name__ == "__main__":
+    # Build-time hook: CI names each offline-bundle dir with this value, so the
+    # naming can never drift from the runtime selection logic above.
+    if "--print-abi-tag" in sys.argv[1:]:
+        print(_abi_tag())
+        raise SystemExit(0)
     _ensure_runtime()
     _run_main()
