@@ -209,8 +209,21 @@ def _ensure_runtime() -> None:
         sys.exit(1)
 
     # A bundle is present but doesn't match this interpreter (ABI/OS/arch), or is
-    # absent. Stop the broken/absent server/lib from shadowing the fallback venv
-    # — both now and across the re-exec — then build/use the venv.
+    # absent. Emit a one-line diagnostic so an unexpected fallback (e.g. a tag
+    # that doesn't match the vendored dir name) is debuggable from the logs.
+    if BUNDLED_LIB.is_dir():
+        try:
+            present = sorted(p.name for p in BUNDLED_LIB.iterdir() if p.is_dir())
+        except OSError:
+            present = []
+        print(
+            f"[gen0sec-mcp] No bundled deps for abi tag '{_abi_tag()}'. "
+            f"server/lib dirs: {present}",
+            file=sys.stderr,
+        )
+
+    # Stop the broken/absent server/lib from shadowing the fallback venv — both
+    # now and across the re-exec — then build/use the venv.
     _purge_bundled_from_path()
 
     venv_dir = PROJECT_ROOT / f".venv-{_env_tag()}"
