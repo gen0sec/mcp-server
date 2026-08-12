@@ -1,0 +1,104 @@
+name: bundle smoke
+
+# Proves the extension actually STARTS across the interpreters/platforms the
+# manifest advertises — the regression gate for the 0.0.7 crash, where a bundle
+# vendored under one Python ABI was launched under another and died on
+# `import pydantic_core`. Runs a real MCP `initialize` handshake.
+
+on:
+  # No base-branch filter: this must also run on stacked PRs (whose base is a
+  # feature branch, not main), so the launch gate covers them before merge.
+  pull_request:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The RELEASED bundle is thin (no vendored wheels). On every target it must
+  # boot by building the first-run fallback venv and completing `initialize`.
+  thin-fallback:
+    name: thin (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      # No vendoring: server/lib is absent, exactly like the released bundle.
+      # run.py must fall back to a per-interpreter venv and initialize.
+      - name: initialize handshake (fallback venv)
+        run: python tests/smoke_initialize.py --timeout 600
+
+  # The exact 0.0.7 failure: server/lib vendored under one interpreter, launched
+  # under a DIFFERENT one. The fix must purge the mismatched bundle and rescue
+  # via the fallback venv.
+  abi-mismatch:
+    name: abi mismatch (vendor py3.12, launch py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        id: py312
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-python@v6
+        id: py313
+        with:
+          python-version: '3.13'
+      - name: Vendor server/lib under Python 3.12
+        run: make vendor PYTHON='${{ steps.py312.outputs.python-path }}'
+      - name: Launch under Python 3.13 (must rescue via fallback)
+        run: >
+          python tests/smoke_initialize.py
+          --python '${{ steps.py313.outputs.python-path }}'
+          --lib "$PWD/server/lib"
+          --timeout 600
+
+  # Same-interpreter vendored bundle: the fast path (no venv) must also work.
+  bundled-fast-path:
+    name: bundled fast-path (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Vendor directly with pip (cross-platform; `make` isn't on windows-latest).
+      - name: Vendor for this interpreter
+        run: >
+          python -m pip install --target server/lib --no-compile
+          --no-warn-script-location --disable-pip-version-check
+          -r requirements.txt
+      - name: initialize handshake (bundled, no venv)
+        run: python tests/smoke_initialize.py --timeout 120 --expect bundled
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # test_rules_validator_unit imports waf_rule_mcp.tools, which needs the
+      # runtime deps (pyyaml/requests/mcp); without them pytest fails to collect.
+      - name: Install deps
+        run: python -m pip install --disable-pip-version-check -r requirements.txt pytest
+      - name: Run bootstrap + unit tests
+        run: python -m pytest -q tests/test_run_bootstrap.py tests/test_rules_validator_unit.py

@@ -22,7 +22,7 @@ jobs:
       matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Create matrix
         id: platforms
@@ -78,7 +78,7 @@ jobs:
           path: ${{ runner.temp }}
 
       - name: Login to Github Packages
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -136,7 +136,7 @@ jobs:
           merge-multiple: true
 
       - name: Login to Github Packages
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -162,17 +162,20 @@ jobs:
 
     steps:
     - name: Checkout sources
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
 
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@v7
       with:
         node-version: '24.x'
 
     - name: Build
       run: |
          npm install -g @anthropic-ai/mcpb
-         mcpb pack
+         # Use the same target as local `make pack` so the released bundle is
+         # identical to what a maintainer builds: thin (no vendored wheels),
+         # portable across interpreters via run.py's first-run venv fallback.
+         make pack
          # Find and rename the generated .mcpb file to the expected name
          MCPB_FILE=$(find . -name "*.mcpb" -type f | head -1)
          if [ -n "$MCPB_FILE" ] && [ "$MCPB_FILE" != "gen0sec-mcp-server.mcpb" ]; then
@@ -201,7 +204,7 @@ jobs:
            rm -rf gen0sec-mcp-server-bake-meta
 
       - name: Release
-        uses: softprops/action-gh-release@v3.0.0
+        uses: softprops/action-gh-release@v3.0.2
         with:
           draft: true
           discussion_category_name: Releases

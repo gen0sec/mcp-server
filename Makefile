@@ -1,4 +1,4 @@
-.PHONY: release help upgrade-nuclei vendor pack clean-vendor
+.PHONY: release help upgrade-nuclei vendor vendor-pack vendor-multi pack pack-offline clean-vendor
 
 help:
 	@echo "Available targets:"
@@ -7,20 +7,37 @@ help:
 	@echo "  upgrade-nuclei [COMMIT=1]  - Upgrade nuclei-templates to latest version from GitHub"
 	@echo "                              Updates config.yaml and manifest.json"
 	@echo "                              Set COMMIT=1 to automatically commit changes"
-	@echo "  vendor                     - Vendor Python dependencies into server/lib for mcpb packaging"
-	@echo "  pack                       - Vendor deps and run 'mcpb pack' to build the .mcpb extension"
+	@echo "  pack                       - Build the RELEASED thin .mcpb (no native wheels; portable). CI-identical."
+	@echo "  vendor                     - Vendor Python deps into server/lib (SINGLE platform, flat layout)"
+	@echo "  vendor-pack                - Single-platform OFFLINE .mcpb (flat server/lib; NOT for release)"
+	@echo "  vendor-multi               - Vendor into server/lib/<abi-tag>/ for THIS interpreter (multi-ABI layout)"
+	@echo "  pack-offline               - Pack whatever multi-ABI dirs exist in server/lib into an offline .mcpb"
+	@echo "                              (the full cross-platform offline bundle is assembled in CI)"
 	@echo "  clean-vendor               - Remove vendored server/lib directory"
 	@echo "  help                       - Show this help message"
 
 # ---------------------------------------------------------------------------
-# mcpb packaging: vendor deps into server/lib so the installed extension does
-# not need to pip-install at runtime (which is blocked by PEP 668 on most
-# modern Python installs).
+# mcpb packaging
+#
+# The RELEASED bundle is THIN: it carries NO vendored wheels. A single .mcpb
+# cannot ship native extensions (pydantic_core, ...) for every Python ABI + OS
+# + arch, so vendoring here would only ever work on the packager's machine and
+# crash everywhere else. Instead, server/run.py builds a per-interpreter venv
+# on first launch. 'make pack' must produce a byte-identical bundle to CI, so
+# it force-cleans any local server/lib before packing.
+#
+# 'vendor'/'vendor-pack' remain as a DELIBERATE single-platform offline escape
+# hatch (e.g. air-gapped install on a known interpreter). The resulting bundle
+# only runs on the same python minor + OS + arch it was built on.
 # ---------------------------------------------------------------------------
-PYTHON ?= /opt/homebrew/bin/python3
+PYTHON ?= python3
+
+pack: clean-vendor
+	mcpb pack
+
 vendor:
-	@echo "Vendoring dependencies into server/lib using $(PYTHON) ..."
-	@$(PYTHON) -c "import sys; print('  python:', sys.executable, sys.version)"
+	@echo "Vendoring dependencies into server/lib using $(PYTHON) (SINGLE platform) ..."
+	@$(PYTHON) -c "import sys, sysconfig; print('  python:', sys.executable, sys.version.split()[0], sysconfig.get_platform())"
 	@rm -rf server/lib
 	@$(PYTHON) -m pip install \
 		--target server/lib \
@@ -28,9 +45,28 @@ vendor:
 		--quiet \
 		--no-warn-script-location \
 		-r requirements.txt
-	@echo "Vendored to server/lib"
+	@echo "Vendored to server/lib (only runs on this python minor + OS + arch)"
 
-pack: vendor
+vendor-pack: vendor
+	mcpb pack
+
+# Multi-ABI layout: server/lib/<abi-tag>/ per interpreter target. run.py picks
+# the dir matching its own _abi_tag(). This local target only populates THIS
+# host's tag (useful for testing the layout); the full cross-platform offline
+# bundle is assembled from per-runner artifacts in CI (offline-bundle.yaml).
+vendor-multi:
+	@TAG=$$($(PYTHON) server/run.py --print-abi-tag); \
+	echo "Vendoring into server/lib/$$TAG using $(PYTHON) ..."; \
+	rm -rf "server/lib/$$TAG"; \
+	$(PYTHON) -m pip install \
+		--target "server/lib/$$TAG" \
+		--no-compile \
+		--quiet \
+		--no-warn-script-location \
+		-r requirements.txt; \
+	echo "Vendored to server/lib/$$TAG"
+
+pack-offline:
 	mcpb pack
 
 clean-vendor:
