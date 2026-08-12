@@ -216,9 +216,15 @@ def _ensure_runtime() -> None:
             present = sorted(p.name for p in BUNDLED_LIB.iterdir() if p.is_dir())
         except OSError:
             present = []
+        tagged = BUNDLED_LIB / _abi_tag()
+        try:
+            inside = sorted(p.name for p in tagged.iterdir())[:12] if tagged.is_dir() else "<no such dir>"
+        except OSError as e:
+            inside = f"<err {e}>"
         print(
             f"[gen0sec-mcp] No bundled deps for abi tag '{_abi_tag()}'. "
-            f"server/lib dirs: {present}",
+            f"server/lib dirs: {present}; tagged.is_dir={tagged.is_dir()}; "
+            f"mcp.is_dir={(tagged / 'mcp').is_dir()}; contents={inside}",
             file=sys.stderr,
         )
 
