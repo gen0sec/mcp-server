@@ -217,14 +217,16 @@ def _ensure_runtime() -> None:
         except OSError:
             present = []
         tagged = BUNDLED_LIB / _abi_tag()
+        import importlib
         try:
-            inside = sorted(p.name for p in tagged.iterdir())[:12] if tagged.is_dir() else "<no such dir>"
-        except OSError as e:
-            inside = f"<err {e}>"
+            importlib.import_module("mcp")
+            why = "import mcp OK"
+        except BaseException as e:  # noqa: BLE001 — diagnostic only
+            why = f"import mcp -> {type(e).__name__}: {e}"
         print(
             f"[gen0sec-mcp] No bundled deps for abi tag '{_abi_tag()}'. "
             f"server/lib dirs: {present}; tagged.is_dir={tagged.is_dir()}; "
-            f"mcp.is_dir={(tagged / 'mcp').is_dir()}; contents={inside}",
+            f"mcp.is_dir={(tagged / 'mcp').is_dir()}; {why}",
             file=sys.stderr,
         )
 
