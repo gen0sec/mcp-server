@@ -53,7 +53,7 @@ The GitHub release ships two `.mcpb` files:
   PyPI. Nothing global is touched, and the host Python is never modified.
 - **`gen0sec-mcp-server-offline.mcpb` (air-gapped)** — carries prebuilt wheels for
   several interpreter targets under `server/lib/<abi-tag>/` (CPython 3.12–3.13 on
-  macOS arm64/x86_64, Linux x86_64/aarch64, Windows x86_64). On a covered target
+  macOS arm64, Linux x86_64/aarch64, Windows x86_64). On a covered target
   it starts with **no network access**. On an uncovered interpreter it degrades to
   the thin bundle's first-run venv.
 
