@@ -85,7 +85,7 @@ jobs:
           --no-warn-script-location --disable-pip-version-check
           -r requirements.txt
       - name: initialize handshake (bundled, no venv)
-        run: python tests/smoke_initialize.py --timeout 120
+        run: python tests/smoke_initialize.py --timeout 120 --expect bundled
 
   unit:
     name: unit tests

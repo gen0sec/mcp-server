@@ -92,10 +92,30 @@ def _bundled_dir() -> "Path | None":
 
 
 def _prepend_to_path(directory: Path) -> None:
-    """Put ``directory`` first on sys.path and PYTHONPATH (for any subprocess)."""
+    """Put ``directory`` (and paths its .pth files add) first on sys.path.
+
+    Uses ``site.addsitedir`` rather than a bare ``sys.path.insert`` so that .pth
+    files in the vendored dir are PROCESSED. This matters for a real pip-target
+    install: pywin32 ships a ``.pth`` that adds ``win32/lib`` (where
+    ``pywintypes`` lives) and registers its DLL directory. Skipping .pth
+    processing leaves ``import pywintypes`` — and therefore ``import mcp`` on
+    Windows — broken. Entries added by addsitedir are hoisted to the front so
+    the bundled deps take precedence over anything already on the host.
+    """
+    import site
+
     entry = str(directory)
+    before = set(sys.path)
+    site.addsitedir(entry)  # appends the dir + its .pth expansions; runs .pth imports
+    added = [p for p in sys.path if p not in before]
+    if added:
+        added_set = set(added)
+        sys.path[:] = [p for p in sys.path if p not in added_set]
+        sys.path[:0] = added
     if entry not in sys.path:
         sys.path.insert(0, entry)
+
+    # Keep PYTHONPATH in sync for any child process / re-exec.
     current = os.environ.get("PYTHONPATH", "")
     parts = [entry] + ([current] if current else [])
     os.environ["PYTHONPATH"] = os.pathsep.join(parts)
