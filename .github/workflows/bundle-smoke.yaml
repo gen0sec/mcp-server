@@ -6,8 +6,9 @@ name: bundle smoke
 # `import pydantic_core`. Runs a real MCP `initialize` handshake.
 
 on:
+  # No base-branch filter: this must also run on stacked PRs (whose base is a
+  # feature branch, not main), so the launch gate covers them before merge.
   pull_request:
-    branches: [main]
   push:
     tags: ['v*']
   workflow_dispatch:
