@@ -10,8 +10,16 @@ name: offline bundle
 # sys_platform markers wrong), then assembled into one bundle.
 
 on:
+  # No base-branch filter (must cover stacked PRs too). Path-scoped because the
+  # native multi-runner matrix is heavy — only run it when packaging inputs change.
   pull_request:
-    branches: [main]
+    paths:
+      - 'server/**'
+      - 'requirements.txt'
+      - 'manifest.json'
+      - 'Makefile'
+      - 'tests/smoke_initialize.py'
+      - '.github/workflows/offline-bundle.yaml'
   push:
     tags: ['v*']
   workflow_dispatch:
