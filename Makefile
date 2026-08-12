@@ -7,20 +7,34 @@ help:
 	@echo "  upgrade-nuclei [COMMIT=1]  - Upgrade nuclei-templates to latest version from GitHub"
 	@echo "                              Updates config.yaml and manifest.json"
 	@echo "                              Set COMMIT=1 to automatically commit changes"
-	@echo "  vendor                     - Vendor Python dependencies into server/lib for mcpb packaging"
-	@echo "  pack                       - Vendor deps and run 'mcpb pack' to build the .mcpb extension"
+	@echo "  pack                       - Build the RELEASED thin .mcpb (no native wheels; portable). CI-identical."
+	@echo "  vendor                     - Vendor Python deps into server/lib (SINGLE platform only)"
+	@echo "  vendor-pack                - Single-platform OFFLINE .mcpb (server/lib native wheels; NOT for release)"
 	@echo "  clean-vendor               - Remove vendored server/lib directory"
 	@echo "  help                       - Show this help message"
 
 # ---------------------------------------------------------------------------
-# mcpb packaging: vendor deps into server/lib so the installed extension does
-# not need to pip-install at runtime (which is blocked by PEP 668 on most
-# modern Python installs).
+# mcpb packaging
+#
+# The RELEASED bundle is THIN: it carries NO vendored wheels. A single .mcpb
+# cannot ship native extensions (pydantic_core, ...) for every Python ABI + OS
+# + arch, so vendoring here would only ever work on the packager's machine and
+# crash everywhere else. Instead, server/run.py builds a per-interpreter venv
+# on first launch. 'make pack' must produce a byte-identical bundle to CI, so
+# it force-cleans any local server/lib before packing.
+#
+# 'vendor'/'vendor-pack' remain as a DELIBERATE single-platform offline escape
+# hatch (e.g. air-gapped install on a known interpreter). The resulting bundle
+# only runs on the same python minor + OS + arch it was built on.
 # ---------------------------------------------------------------------------
-PYTHON ?= /opt/homebrew/bin/python3
+PYTHON ?= python3
+
+pack: clean-vendor
+	mcpb pack
+
 vendor:
-	@echo "Vendoring dependencies into server/lib using $(PYTHON) ..."
-	@$(PYTHON) -c "import sys; print('  python:', sys.executable, sys.version)"
+	@echo "Vendoring dependencies into server/lib using $(PYTHON) (SINGLE platform) ..."
+	@$(PYTHON) -c "import sys, sysconfig; print('  python:', sys.executable, sys.version.split()[0], sysconfig.get_platform())"
 	@rm -rf server/lib
 	@$(PYTHON) -m pip install \
 		--target server/lib \
@@ -28,9 +42,9 @@ vendor:
 		--quiet \
 		--no-warn-script-location \
 		-r requirements.txt
-	@echo "Vendored to server/lib"
+	@echo "Vendored to server/lib (only runs on this python minor + OS + arch)"
 
-pack: vendor
+vendor-pack: vendor
 	mcpb pack
 
 clean-vendor:

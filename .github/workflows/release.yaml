@@ -172,7 +172,10 @@ jobs:
     - name: Build
       run: |
          npm install -g @anthropic-ai/mcpb
-         mcpb pack
+         # Use the same target as local `make pack` so the released bundle is
+         # identical to what a maintainer builds: thin (no vendored wheels),
+         # portable across interpreters via run.py's first-run venv fallback.
+         make pack
          # Find and rename the generated .mcpb file to the expected name
          MCPB_FILE=$(find . -name "*.mcpb" -type f | head -1)
          if [ -n "$MCPB_FILE" ] && [ "$MCPB_FILE" != "gen0sec-mcp-server.mcpb" ]; then
