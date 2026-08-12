@@ -94,3 +94,33 @@ def test_bundled_dir_none_when_unpopulated(monkeypatch, tmp_path):
     # mcp exists, so there is no usable bundled dir.
     monkeypatch.setattr(run, "BUNDLED_LIB", tmp_path)
     assert run._bundled_dir() is None
+
+
+def test_ensure_runtime_skips_bundled_after_bootstrap(monkeypatch):
+    # Regression: once re-exec'd into the fallback venv, _ensure_runtime must NOT
+    # re-prepend a bundled dir — an incompatible server/lib would shadow the venv
+    # and make the venv look "broken".
+    run = _load_run()
+    calls = []
+    monkeypatch.setattr(run, "_prepend_to_path", lambda d: calls.append(d))
+    monkeypatch.setattr(run, "_bundled_dir", lambda: run.BUNDLED_LIB / "sometag")
+    monkeypatch.setattr(run, "_bundled_deps_importable", lambda: True)
+    monkeypatch.setenv("GEN0SEC_MCP_BOOTSTRAPPED", "1")
+
+    run._ensure_runtime()
+
+    assert calls == []
+
+
+def test_ensure_runtime_prepends_bundled_before_bootstrap(monkeypatch):
+    run = _load_run()
+    calls = []
+    tag_dir = run.BUNDLED_LIB / "sometag"
+    monkeypatch.setattr(run, "_prepend_to_path", lambda d: calls.append(d))
+    monkeypatch.setattr(run, "_bundled_dir", lambda: tag_dir)
+    monkeypatch.setattr(run, "_bundled_deps_importable", lambda: True)
+    monkeypatch.delenv("GEN0SEC_MCP_BOOTSTRAPPED", raising=False)
+
+    run._ensure_runtime()
+
+    assert calls == [tag_dir]

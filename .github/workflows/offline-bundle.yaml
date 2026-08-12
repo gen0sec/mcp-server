@@ -45,7 +45,7 @@ jobs:
       - name: Compute ABI tag
         id: tag
         shell: bash
-        run: echo "tag=$(python server/run.py --print-abi-tag)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$(python server/run.py --print-abi-tag | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
       - name: Vendor native wheels for this interpreter
         shell: bash
         run: |

@@ -181,18 +181,23 @@ def _build_venv(venv_dir: Path) -> Path:
 
 def _ensure_runtime() -> None:
     """Guarantee `import mcp` will succeed, re-execing into a venv if needed."""
-    # Multi-ABI bundle: the manifest's PYTHONPATH=server/lib holds no packages
-    # directly, so add the subdir matching this interpreter before checking.
-    bundled = _bundled_dir()
-    if bundled is not None:
-        _prepend_to_path(bundled)
+    # Once we've re-exec'd into the fallback venv, that venv is authoritative:
+    # do NOT re-discover a bundled dir here, or an incompatible server/lib would
+    # be prepended again and shadow the venv (import fails → false "venv broken").
+    already_bootstrapped = os.environ.get(_BOOTSTRAP_FLAG) == "1"
+    if not already_bootstrapped:
+        # Multi-ABI bundle: the manifest's PYTHONPATH=server/lib holds no
+        # packages directly, so add the subdir matching this interpreter.
+        bundled = _bundled_dir()
+        if bundled is not None:
+            _prepend_to_path(bundled)
 
     if _bundled_deps_importable():
         return
 
     # We re-exec into a fallback venv below. If we've already done so and deps
     # STILL don't import, the venv itself is broken — stop, don't loop.
-    if os.environ.get(_BOOTSTRAP_FLAG) == "1":
+    if already_bootstrapped:
         print(
             "[gen0sec-mcp] Dependencies still unavailable after venv bootstrap. "
             "The fallback venv did not provide 'mcp'.\n"
@@ -250,7 +255,10 @@ if __name__ == "__main__":
     # Build-time hook: CI names each offline-bundle dir with this value, so the
     # naming can never drift from the runtime selection logic above.
     if "--print-abi-tag" in sys.argv[1:]:
-        print(_abi_tag())
+        # No trailing newline: on Windows a printed "\n" becomes "\r\n", and a
+        # shell $(...) keeps the stray "\r", corrupting the dir name CI derives.
+        sys.stdout.write(_abi_tag())
+        sys.stdout.flush()
         raise SystemExit(0)
     _ensure_runtime()
     _run_main()
