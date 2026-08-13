@@ -30,7 +30,7 @@ jobs:
         python: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       # No vendoring: server/lib is absent, exactly like the released bundle.
@@ -47,11 +47,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         id: py312
         with:
           python-version: '3.12'
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         id: py313
         with:
           python-version: '3.13'
@@ -75,7 +75,7 @@ jobs:
         os: [ubuntu-latest, macos-26, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       # Vendor directly with pip (cross-platform; `make` isn't on windows-latest).
@@ -93,7 +93,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       # test_rules_validator_unit imports waf_rule_mcp.tools, which needs the
