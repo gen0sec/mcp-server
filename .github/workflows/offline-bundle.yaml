@@ -110,7 +110,7 @@ jobs:
           if-no-files-found: error
       - name: Attach offline bundle to release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           # Match release.yaml: add the asset to the same draft release for the
           # tag without flipping its draft state.
