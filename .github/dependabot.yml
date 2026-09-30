@@ -9,7 +9,12 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
-
+    open-pull-requests-limit: 10
+    # Group the routine bumps so the five-open-PR default cannot be
+    # filled by one bump each and stall every later update.
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
   - package-ecosystem: "docker" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
